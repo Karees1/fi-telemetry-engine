@@ -1,0 +1,230 @@
+/* ── Root ── */
+.root {
+  position: fixed;
+  inset: 0;
+  background: #0A0E27;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  overflow: hidden;
+}
+
+/* ── Background grid ── */
+.grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0, 217, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 217, 255, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+}
+
+/* ── Top bar ── */
+.topBar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 2.5rem;
+  border-bottom: 1px solid rgba(0, 217, 255, 0.1);
+}
+
+.topBarLabel {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.3em;
+  color: rgba(0, 217, 255, 0.45);
+}
+
+.topBarRace {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.22em;
+  color: rgba(239, 30, 36, 0.7);
+}
+
+/* ── Centre panel ── */
+.panel {
+  width: min(640px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* ── Stage list ── */
+.stageList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.stageRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.stageTick {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.65rem;
+  width: 1.2rem;
+  flex-shrink: 0;
+  padding-top: 0.1rem;
+}
+
+.stageDone .stageTick  { color: #00D9FF; }
+.stageActive .stageTick { color: #EF1E24; }
+.stagePending .stageTick { color: rgba(107, 114, 128, 0.5); }
+
+.stageText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+}
+
+.stageLabel {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+}
+
+.stageDone .stageLabel   { color: rgba(0, 217, 255, 0.7); }
+.stageActive .stageLabel { color: #FFFFFF; }
+.stagePending .stageLabel { color: rgba(107, 114, 128, 0.5); }
+
+.stageSub {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
+  color: rgba(176, 181, 193, 0.5);
+}
+
+/* ── Spinner ── */
+.spinner {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgba(239, 30, 36, 0.25);
+  border-top-color: #EF1E24;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Driver bars ── */
+.driverList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding-left: 2rem;
+  border-left: 1px solid rgba(0, 217, 255, 0.12);
+}
+
+.driverListLabel {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.55rem;
+  letter-spacing: 0.28em;
+  color: rgba(0, 217, 255, 0.35);
+  margin-bottom: 0.3rem;
+}
+
+.driverBar {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.driverCode {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  color: #FFFFFF;
+  width: 2.2rem;
+  flex-shrink: 0;
+}
+
+.driverBarFill {
+  flex: 1;
+  height: 2px;
+  background: linear-gradient(to right, rgba(0, 217, 255, 0.6), rgba(0, 217, 255, 0.15));
+  transform-origin: left;
+  border-radius: 1px;
+}
+
+.driverOk {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.6rem;
+  color: #00D9FF;
+  flex-shrink: 0;
+}
+
+/* ── Meta strip ── */
+.metaStrip {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  color: rgba(176, 181, 193, 0.45);
+  padding: 0.6rem 0;
+  border-top: 1px solid rgba(0, 217, 255, 0.08);
+}
+
+.metaDot {
+  color: rgba(0, 217, 255, 0.3);
+}
+
+/* ── Error ── */
+.errorMsg {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  color: #EF1E24;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(239, 30, 36, 0.3);
+  border-radius: 0.2rem;
+  background: rgba(239, 30, 36, 0.05);
+}
+
+/* ── Progress bar ── */
+.progressTrack {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(0, 217, 255, 0.08);
+}
+
+.progressFill {
+  height: 100%;
+  background: linear-gradient(to right, rgba(0, 217, 255, 0.6), #00D9FF);
+  transform-origin: left;
+}
+
+/* ── Scanlines ── */
+.scanlines {
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+}

@@ -1,0 +1,32 @@
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.labelRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.label {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  color: #6B7280;
+  text-transform: uppercase;
+}
+
+.unit {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.svg {
+  width: 100%;
+  display: block;
+  overflow: visible;
+}

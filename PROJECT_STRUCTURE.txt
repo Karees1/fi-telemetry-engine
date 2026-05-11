@@ -1,0 +1,89 @@
+🏁 F1 TELEMETRY DASHBOARD - PROJECT STRUCTURE
+================================================
+
+f1-telemetry-app/
+│
+├── 📄 ROOT FILES
+│   ├── design-tokens.ts          ← 🎨 ALL AESTHETIC RULES (colors, fonts, spacing)
+│   ├── tsconfig.json             ← TypeScript configuration
+│   ├── next.config.js            ← Next.js configuration
+│   ├── package.json              ← Dependencies & scripts
+│   └── README.md                 ← Project documentation
+│
+├── 📱 FRONTEND (app/)
+│   ├── layout.tsx                ← Root layout with theme setup
+│   ├── page.tsx                  ← Main dashboard page (WELCOME SCREEN)
+│   ├── page.module.css           ← Dashboard styles (welcome + main)
+│   ├── globals.css               ← Global styles & utility classes
+│   │
+│   ├── components/               (TO BUILD)
+│   │   ├── Track3D/             → Three.js track visualization
+│   │   ├── Telemetry/           → Data panels (speed, throttle, etc)
+│   │   ├── Controls/            → Race picker, timeline, toggles
+│   │   └── Layout/              → Shared layout components
+│   │
+│   ├── api/                      ← Next.js API Routes
+│   │   ├── races/route.ts        ← GET /api/races (list of races)
+│   │   ├── sessions/            → (TO BUILD) GET session data
+│   │   └── telemetry/           → (TO BUILD) GET lap telemetry
+│   │
+│   ├── hooks/                    (TO BUILD)
+│   │   ├── useFetchRaces         → Fetch available races
+│   │   ├── useFetchSession       → Load race session
+│   │   └── useFetchTelemetry     → Get telemetry data
+│   │
+│   └── utils/                    (TO BUILD)
+│       └── three-helpers.ts      → Three.js utility functions
+│
+├── 🐍 BACKEND (services/python/)
+│   ├── fastf1_service.py         ← FastF1 API wrapper & data processing
+│   ├── cache_manager.py          (TO BUILD) Smart caching for 5GB limit
+│   └── data_worker.py            (TO BUILD) Async data processing
+│
+├── 📘 TYPES (types/)
+│   └── index.ts                  ← All TypeScript types & interfaces
+│
+└── 📚 UTILITIES (lib/)            (TO BUILD)
+    ├── api-client.ts             → Frontend API client
+    └── three-helpers.ts          → Three.js utilities
+
+================================================
+✅ WHAT'S BUILT:
+================================================
+1. ✅ Design tokens (all aesthetic rules locked in code)
+2. ✅ TypeScript configuration
+3. ✅ Global styles with glassmorphism + neon theme
+4. ✅ Welcome screen with race selection UI
+5. ✅ API route skeleton for races
+6. ✅ Python FastF1 service layer
+7. ✅ All TypeScript types defined
+
+================================================
+🎨 AESTHETIC LOCKED IN:
+================================================
+• Colors: Red (#EF1E24) + Cyan (#00D9FF) + Dark (#0A0E27)
+• Fonts: Space Grotesk (display) + Roboto Mono (body)
+• Components: Glassmorphic with backdrop blur
+• Animations: Smooth, intentional, responsive
+• Spacing: Systematic scale (4, 8, 12, 16, 24, 32...)
+
+================================================
+⚙️ TECH STACK:
+================================================
+Frontend:  Next.js 14 + React 18 + TypeScript
+3D:        Three.js + react-three/fiber
+State:     Zustand
+Animation: Framer Motion
+Backend:   Python FastF1 + NumPy/Pandas
+Hosting:   Vercel (ready to deploy)
+
+================================================
+🚀 NEXT STEPS:
+================================================
+1. Implement Track3D component (Three.js visualization)
+2. Build Telemetry data panels
+3. Connect Python service to API routes
+4. Add interactive timeline scrubber
+5. Implement real-time WebSocket (future)
+
+================================================

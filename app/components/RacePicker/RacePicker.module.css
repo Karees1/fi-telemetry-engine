@@ -1,0 +1,351 @@
+/* ── Root ── */
+.root {
+  width: 100%;
+  height: 100vh;
+  background: #0A0E27;
+  background-image:
+    radial-gradient(ellipse at 20% 55%, rgba(0, 217, 255, 0.04) 0%, transparent 58%),
+    radial-gradient(ellipse at 80% 45%, rgba(239, 30, 36, 0.035) 0%, transparent 58%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Header ── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 2.25rem 3rem 1.25rem;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.redBar {
+  width: 3px;
+  height: 46px;
+  background: #EF1E24;
+  box-shadow: 0 0 16px rgba(239, 30, 36, 0.65);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.seasonLabel {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.63rem;
+  letter-spacing: 0.22em;
+  color: #EF1E24;
+  margin: 0 0 0.2rem;
+}
+
+.pageTitle {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: clamp(1.75rem, 3.2vw, 2.5rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #FFFFFF;
+  margin: 0;
+  line-height: 1;
+}
+
+.rule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, rgba(0, 217, 255, 0.22), transparent);
+  margin-left: 0.5rem;
+}
+
+/* ── Year selector ── */
+.yearSelector {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+  margin-left: 0.5rem;
+}
+
+.yearBtn {
+  background: transparent;
+  border: 1px solid rgba(0, 217, 255, 0.15);
+  border-radius: 0.2rem;
+  color: #4B5563;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  padding: 0.3rem 0.65rem;
+  cursor: pointer;
+  transition: border-color 220ms ease, color 220ms ease, background 220ms ease;
+}
+
+.yearBtn:hover {
+  border-color: rgba(0, 217, 255, 0.35);
+  color: #B0B5C1;
+}
+
+.yearBtnActive {
+  border-color: rgba(0, 217, 255, 0.55);
+  color: #00D9FF;
+  background: rgba(0, 217, 255, 0.06);
+}
+
+/* ── Search ── */
+.searchWrap {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: rgba(10, 14, 39, 0.55);
+  border: 1px solid rgba(0, 217, 255, 0.16);
+  border-radius: 0.25rem;
+  padding: 0.42rem 0.85rem;
+  flex-shrink: 0;
+  transition: border-color 280ms ease, box-shadow 280ms ease;
+}
+
+.searchWrap:focus-within {
+  border-color: rgba(0, 217, 255, 0.45);
+  box-shadow: 0 0 10px rgba(0, 217, 255, 0.08);
+}
+
+.searchIcon {
+  font-size: 0.95rem;
+  color: #6B7280;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.searchInput {
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  color: #FFFFFF;
+  width: 150px;
+}
+
+.searchInput::placeholder {
+  color: #4B5563;
+}
+
+/* ── Canvas area ── */
+.canvasWrap {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+
+/* ── Loading dots ── */
+.loader {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+}
+
+.dot {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #00D9FF;
+  animation: blink 1.2s ease-in-out infinite;
+}
+
+.dot:nth-child(2) { animation-delay: 0.2s; }
+.dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes blink {
+  0%, 100% { opacity: 1;    transform: scale(1); }
+  50%       { opacity: 0.18; transform: scale(0.55); }
+}
+
+/* ── Race count watermark ── */
+.raceCount {
+  position: absolute;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.32em;
+  color: #374151;
+  margin: 0;
+  pointer-events: none;
+}
+
+/* ── Race card (slide-up panel) ── */
+.raceCard {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: min(740px, 92vw);
+  background: rgba(12, 16, 36, 0.97);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  border-bottom: none;
+  border-radius: 0.75rem 0.75rem 0 0;
+  padding: 2rem 2.5rem 2.75rem;
+  z-index: 20;
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.55);
+}
+
+.dismissBtn {
+  position: absolute;
+  top: 1.1rem;
+  right: 1.2rem;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  color: #6B7280;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  cursor: pointer;
+  transition: border-color 200ms ease, color 200ms ease;
+  line-height: 1;
+}
+
+.dismissBtn:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #FFFFFF;
+}
+
+.cardInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+/* ── Race identity block — fully centered ── */
+.cardIdentity {
+  text-align: center;
+  width: 100%;
+}
+
+.cardRound {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.22em;
+  color: #EF1E24;
+  margin: 0 0 0.6rem;
+}
+
+.cardName {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: clamp(1.5rem, 3vw, 2.1rem);
+  font-weight: 700;
+  color: #FFFFFF;
+  margin: 0 0 0.4rem;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+}
+
+.cardCircuit {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.74rem;
+  color: #00D9FF;
+  margin: 0 0 0.2rem;
+}
+
+.cardLocation {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.67rem;
+  color: #6B7280;
+  margin: 0;
+}
+
+/* ── Divider ── */
+.cardDivider {
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(to right, transparent, rgba(0, 217, 255, 0.18), transparent);
+}
+
+/* ── Actions block — centered ── */
+.cardActions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.sessionLabel {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.25em;
+  color: #4B5563;
+  margin: 0;
+}
+
+.sessionPills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.sessionPill {
+  background: rgba(0, 217, 255, 0.06);
+  border: 1px solid rgba(0, 217, 255, 0.18);
+  border-radius: 0.2rem;
+  color: #00D9FF;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  padding: 0.3rem 0.75rem;
+  cursor: pointer;
+  transition: background 200ms ease, border-color 200ms ease;
+}
+
+.sessionPill:hover {
+  background: rgba(0, 217, 255, 0.16);
+  border-color: rgba(0, 217, 255, 0.5);
+}
+
+.sessionPillActive {
+  background: rgba(0, 217, 255, 0.18);
+  border-color: rgba(0, 217, 255, 0.7);
+  color: #FFFFFF;
+  box-shadow: 0 0 10px rgba(0, 217, 255, 0.2);
+}
+
+.confirmBtn {
+  background: #EF1E24;
+  border: none;
+  border-radius: 0.25rem;
+  color: #FFFFFF;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 0.72rem 2.5rem;
+  cursor: pointer;
+  transition: background 200ms ease, box-shadow 200ms ease;
+  text-transform: uppercase;
+}
+
+.confirmBtn:hover {
+  background: #FF3338;
+  box-shadow: 0 0 22px rgba(239, 30, 36, 0.45);
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .header { padding: 1.5rem 1.25rem 1rem; gap: 1rem; }
+  .rule   { display: none; }
+  .searchWrap { display: none; }
+  .raceCard { width: 100%; border-radius: 0.5rem 0.5rem 0 0; padding: 1.5rem 1.25rem 2rem; }
+  .confirmBtn { width: 100%; padding: 0.9rem; }
+}

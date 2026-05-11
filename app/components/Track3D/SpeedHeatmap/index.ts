@@ -1,0 +1,1 @@
+export { SpeedHeatmap } from './SpeedHeatmap';

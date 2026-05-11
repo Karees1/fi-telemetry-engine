@@ -1,0 +1,283 @@
+/**
+ * GLOBAL STYLES
+ * F1 Telemetry Dashboard
+ * 
+ * Based on design-tokens.ts
+ * Uses CSS variables for consistency
+ */
+
+/* ============================================
+   RESET & BASE
+   ============================================ */
+html, body, #__next {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: #0A0E27;
+  color: #FFFFFF;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 16px;
+  line-height: 1.5;
+  overflow: hidden;
+}
+
+/* ============================================
+   TYPOGRAPHY
+   ============================================ */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Space Grotesk', monospace;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+h1 { font-size: 2.5rem; line-height: 1.2; }
+h2 { font-size: 2rem; line-height: 1.2; }
+h3 { font-size: 1.5rem; line-height: 1.3; }
+h4 { font-size: 1.25rem; line-height: 1.3; }
+h5 { font-size: 1.125rem; line-height: 1.4; }
+h6 { font-size: 1rem; line-height: 1.4; }
+
+p, span, a {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+/* ============================================
+   BUTTONS
+   ============================================ */
+button, [role="button"] {
+  cursor: pointer;
+  border: none;
+  border-radius: 0.5rem;
+  font-family: 'Space Grotesk', monospace;
+  font-weight: 600;
+  font-size: 0.875rem;
+  padding: 0.75rem 1.5rem;
+  transition: all 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+button:hover {
+  transform: translateY(-2px);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+/* Primary Button */
+.btn-primary {
+  background-color: #00D9FF;
+  color: #0A0E27;
+  box-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
+}
+
+.btn-primary:hover {
+  background-color: #00A8CC;
+  box-shadow: 0 0 40px rgba(0, 217, 255, 0.5);
+}
+
+/* Secondary Button */
+.btn-secondary {
+  background-color: transparent;
+  color: #00D9FF;
+  border: 1px solid rgba(0, 217, 255, 0.2);
+}
+
+.btn-secondary:hover {
+  border-color: #00D9FF;
+  box-shadow: 0 0 20px rgba(0, 217, 255, 0.2);
+}
+
+/* Danger Button */
+.btn-danger {
+  background-color: #EF1E24;
+  color: #FFFFFF;
+}
+
+.btn-danger:hover {
+  background-color: #FF0040;
+  box-shadow: 0 0 20px rgba(239, 30, 36, 0.3);
+}
+
+/* ============================================
+   CARDS & PANELS (Glassmorphism)
+   ============================================ */
+.card, .panel {
+  background-color: rgba(20, 25, 48, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4);
+  transition: all 300ms ease-out;
+}
+
+.card:hover, .panel:hover {
+  border-color: rgba(0, 217, 255, 0.4);
+  box-shadow: 
+    0 4px 6px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(0, 217, 255, 0.2);
+}
+
+/* ============================================
+   INPUTS
+   ============================================ */
+input, select, textarea {
+  background-color: rgba(10, 14, 39, 0.5);
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  color: #FFFFFF;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  transition: all 300ms ease-out;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: #00D9FF;
+  box-shadow: 0 0 10px rgba(0, 217, 255, 0.3);
+  background-color: rgba(10, 14, 39, 0.8);
+}
+
+input::placeholder {
+  color: #6B7280;
+}
+
+/* ============================================
+   SCROLLBAR (Custom for dark theme)
+   ============================================ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(10, 14, 39, 0.5);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 217, 255, 0.5);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 217, 255, 0.8);
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+/* Flexbox */
+.flex { display: flex; }
+.flex-col { display: flex; flex-direction: column; }
+.flex-center { display: flex; align-items: center; justify-content: center; }
+.flex-between { display: flex; align-items: center; justify-content: space-between; }
+
+/* Grid */
+.grid { display: grid; }
+
+/* Text */
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.text-left { text-align: left; }
+.text-xs { font-size: 0.75rem; }
+.text-sm { font-size: 0.875rem; }
+.text-base { font-size: 1rem; }
+.text-lg { font-size: 1.125rem; }
+.text-xl { font-size: 1.25rem; }
+
+/* Colors */
+.text-primary { color: #00D9FF; }
+.text-secondary { color: #B0B5C1; }
+.text-red { color: #EF1E24; }
+
+/* Spacing */
+.p-4 { padding: 1rem; }
+.p-6 { padding: 1.5rem; }
+.m-4 { margin: 1rem; }
+.mb-4 { margin-bottom: 1rem; }
+.mt-4 { margin-top: 1rem; }
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(0, 217, 255, 0.5);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.animate-glow {
+  animation: glow 2s ease-in-out infinite;
+}
+
+.animate-pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+
+@media (max-width: 768px) {
+  h1 { font-size: 1.875rem; }
+  h2 { font-size: 1.5rem; }
+  h3 { font-size: 1.25rem; }
+  
+  body {
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 640px) {
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.25rem; }
+  h3 { font-size: 1rem; }
+  
+  button {
+    padding: 0.5rem 1rem;
+    font-size: 0.75rem;
+  }
+  
+  .card, .panel {
+    padding: 1rem;
+  }
+}

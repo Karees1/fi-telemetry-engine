@@ -1,0 +1,73 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js build output
+.next/
+out/
+build/
+
+# FastF1 cache — never commit (can be hundreds of MB)
+cache/
+
+# Large 3D model files — only the two used models are tracked
+# (mercedes_-_amg_sl_63.glb and porsche_911_turbo_s.glb)
+public/models/*.zip
+public/models/*.usdz
+public/models/2025_*
+public/models/aston_*
+public/models/f1_tyres_*
+public/models/ferrari_*
+public/models/hoonicorn_*
+public/models/mercedes-amg_*
+public/models/mercedes_-_amg_sl_63.zip
+public/models/mercedes_optimized.glb
+public/models/porsche_911_turbo_s (1).glb
+public/models/porsche_optimized.glb
+public/models/red_bull_*
+public/models/redbull_*
+public/models.zip
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# TypeScript
+tsconfig.tsbuildinfo
+next-env.d.ts
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+*.egg
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code memory (local only)
+.claude/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

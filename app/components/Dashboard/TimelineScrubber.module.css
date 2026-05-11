@@ -1,0 +1,118 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  height: 100%;
+  padding: 0 1.25rem;
+  user-select: none;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-shrink: 0;
+}
+
+.playBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 217, 255, 0.5);
+  background: rgba(0, 217, 255, 0.08);
+  color: #00D9FF;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+  flex-shrink: 0;
+}
+
+.playBtn:hover {
+  background: rgba(0, 217, 255, 0.18);
+  border-color: rgba(0, 217, 255, 0.8);
+  box-shadow: 0 0 12px rgba(0, 217, 255, 0.3);
+}
+
+.speedGroup {
+  display: flex;
+  gap: 0.2rem;
+}
+
+.speedBtn {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  background: transparent;
+  color: #6B7280;
+  cursor: pointer;
+  border-radius: 0.25rem;
+  transition: all 0.15s;
+}
+
+.speedBtn:hover {
+  color: #B0B5C1;
+  border-color: rgba(0, 217, 255, 0.4);
+}
+
+.speedBtnActive {
+  color: #00D9FF;
+  border-color: rgba(0, 217, 255, 0.6);
+  background: rgba(0, 217, 255, 0.1);
+}
+
+.track {
+  flex: 1;
+  position: relative;
+  height: 28px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.trackBg {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+}
+
+.fill {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 3px;
+  background: linear-gradient(90deg, #00D9FF, rgba(0, 217, 255, 0.6));
+  border-radius: 2px;
+  pointer-events: none;
+  box-shadow: 0 0 6px rgba(0, 217, 255, 0.5);
+  transition: width 0.016s linear;
+}
+
+.thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #00D9FF;
+  box-shadow: 0 0 8px rgba(0, 217, 255, 0.8);
+  pointer-events: none;
+}
+
+.time {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.75rem;
+  color: #B0B5C1;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+  min-width: 72px;
+  text-align: right;
+}

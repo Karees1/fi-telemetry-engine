@@ -1,0 +1,203 @@
+.root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 1.25rem;
+  background: rgba(10, 14, 39, 0.88);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(0, 217, 255, 0.12);
+}
+
+.backBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'Space Grotesk', monospace;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: #6B7280;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  transition: color 0.2s, background 0.2s;
+  flex-shrink: 0;
+}
+
+.backBtn:hover {
+  color: #EF1E24;
+  background: rgba(239, 30, 36, 0.08);
+}
+
+.divider {
+  width: 1px;
+  height: 24px;
+  background: rgba(0, 217, 255, 0.12);
+  flex-shrink: 0;
+}
+
+.raceInfo {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-shrink: 0;
+}
+
+.sessionTag {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  color: #EF1E24;
+  background: rgba(239, 30, 36, 0.12);
+  border: 1px solid rgba(239, 30, 36, 0.25);
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.2rem;
+}
+
+.raceName {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  letter-spacing: 0.03em;
+}
+
+.raceYear {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.75rem;
+  color: #6B7280;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.groupLabel {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.55rem;
+  letter-spacing: 0.16em;
+  color: #6B7280;
+  flex-shrink: 0;
+}
+
+.driverGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.driverPills {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.driverDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 0.3rem;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.driverPill {
+  display: flex;
+  align-items: center;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  background: transparent;
+  color: #6B7280;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.driverPill:hover {
+  color: #B0B5C1;
+  border-color: rgba(0, 217, 255, 0.45);
+}
+
+.driverPillActive {
+  background: rgba(0, 217, 255, 0.15);
+  border-color: rgba(0, 217, 255, 0.7);
+  color: #00D9FF;
+  box-shadow: 0 0 10px rgba(0, 217, 255, 0.2);
+}
+
+.cameraGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.camPills {
+  display: flex;
+  gap: 0.2rem;
+}
+
+.camPill {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.55rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  padding: 0.2rem 0.45rem;
+  border-radius: 0.2rem;
+  border: 1px solid rgba(0, 217, 255, 0.15);
+  background: transparent;
+  color: #6B7280;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.camPill:hover {
+  color: #B0B5C1;
+  border-color: rgba(0, 217, 255, 0.35);
+}
+
+.camPillActive {
+  background: rgba(0, 217, 255, 0.12);
+  border-color: rgba(0, 217, 255, 0.55);
+  color: #00D9FF;
+}
+
+.toggleBtn {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  padding: 0.3rem 0.7rem;
+  border-radius: 0.25rem;
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  background: transparent;
+  color: #6B7280;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.toggleBtn:hover {
+  color: #B0B5C1;
+  border-color: rgba(0, 217, 255, 0.4);
+}
+
+.toggleBtnActive {
+  background: rgba(0, 217, 255, 0.12);
+  border-color: rgba(0, 217, 255, 0.6);
+  color: #00D9FF;
+  box-shadow: 0 0 10px rgba(0, 217, 255, 0.15);
+}

@@ -1,0 +1,302 @@
+.root {
+  position: fixed;
+  top: 56px;
+  right: 0;
+  bottom: 68px;
+  width: 272px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  background: rgba(10, 14, 39, 0.84);
+  backdrop-filter: blur(14px);
+  border-left: 1px solid rgba(0, 217, 255, 0.1);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.root::-webkit-scrollbar {
+  width: 3px;
+}
+.root::-webkit-scrollbar-track { background: transparent; }
+.root::-webkit-scrollbar-thumb { background: rgba(0, 217, 255, 0.2); border-radius: 2px; }
+
+.emptyState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.emptyText {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.75rem;
+  color: #6B7280;
+  letter-spacing: 0.1em;
+}
+
+/* Driver badge */
+.driverBadge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.driverDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #00D9FF;
+  box-shadow: 0 0 8px rgba(0, 217, 255, 0.8);
+  flex-shrink: 0;
+}
+
+.driverCode {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  letter-spacing: 0.06em;
+}
+
+.lapTime {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.75rem;
+  color: #00D9FF;
+  margin-left: auto;
+}
+
+.lapLabel {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  color: #6B7280;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  transition: all 0.15s;
+}
+.lapLabel:hover {
+  color: #00D9FF;
+  border-color: rgba(0, 217, 255, 0.3);
+}
+.lapLabelOpen {
+  color: #00D9FF;
+  border-color: rgba(0, 217, 255, 0.5);
+  background: rgba(0, 217, 255, 0.08);
+}
+
+/* Lap picker panel */
+.lapPanel {
+  background: rgba(8, 12, 32, 0.97);
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.lapPanelHeader {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.5rem;
+  letter-spacing: 0.18em;
+  color: #6B7280;
+  padding: 0.5rem 0.625rem 0.25rem;
+}
+.lapList {
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,217,255,0.2) transparent;
+}
+.lapList::-webkit-scrollbar { width: 3px; }
+.lapList::-webkit-scrollbar-track { background: transparent; }
+.lapList::-webkit-scrollbar-thumb { background: rgba(0,217,255,0.2); border-radius: 2px; }
+
+.lapRow {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.3rem 0.625rem;
+  background: transparent;
+  border: none;
+  border-top: 1px solid rgba(255,255,255,0.03);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.lapRow:hover { background: rgba(0, 217, 255, 0.06); }
+.lapRowActive {
+  background: rgba(0, 217, 255, 0.1);
+  border-left: 2px solid #00D9FF;
+}
+.lapNum {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.6rem;
+  color: #6B7280;
+  width: 20px;
+  flex-shrink: 0;
+}
+.lapTimeCell {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.65rem;
+  color: #B0B5C1;
+  flex: 1;
+  text-align: left;
+}
+.lapRowActive .lapTimeCell { color: #00D9FF; }
+.compound {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.fastestFlag {
+  font-size: 0.55rem;
+  color: #FFB703;
+  flex-shrink: 0;
+}
+.pbFlag {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.45rem;
+  color: #06FFA5;
+  flex-shrink: 0;
+}
+.noLaps {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.6rem;
+  color: #6B7280;
+  padding: 0.75rem 0.625rem;
+  text-align: center;
+}
+.lapLoading {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.55rem;
+  letter-spacing: 0.14em;
+  color: #00D9FF;
+  padding: 0.4rem 0.625rem;
+  text-align: center;
+  animation: pulse 1s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1; }
+}
+
+/* Large live readout */
+.liveReadout {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+}
+
+.speedBlock {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+
+.speedValue {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 2.4rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  line-height: 1;
+  min-width: 4ch;
+}
+
+.speedUnit {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  color: #6B7280;
+}
+
+.gearValue {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #FFB703;
+  margin-left: auto;
+}
+
+/* Live bars */
+.liveBars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.liveBar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.liveBarLabel {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.55rem;
+  letter-spacing: 0.12em;
+  color: #6B7280;
+  width: 26px;
+  flex-shrink: 0;
+}
+
+.liveBarTrack {
+  flex: 1;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.liveBarFillGreen {
+  height: 100%;
+  background: #06FFA5;
+  border-radius: 3px;
+  transition: width 0.05s linear;
+  box-shadow: 0 0 6px rgba(6, 255, 165, 0.5);
+}
+
+.liveBarFillRed {
+  height: 100%;
+  background: #EF1E24;
+  border-radius: 3px;
+  transition: width 0.05s linear;
+  box-shadow: 0 0 6px rgba(239, 30, 36, 0.5);
+}
+
+.drsIndicator {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.2rem;
+  border: 1px solid rgba(6, 255, 165, 0.15);
+  color: #2a3a2a;
+  background: transparent;
+  transition: all 0.2s;
+  align-self: flex-end;
+}
+
+.drsActive {
+  background: rgba(6, 255, 165, 0.2);
+  border-color: rgba(6, 255, 165, 0.7);
+  color: #06FFA5;
+  box-shadow: 0 0 10px rgba(6, 255, 165, 0.3);
+}
+
+.separator {
+  height: 1px;
+  background: rgba(0, 217, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.charts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}

@@ -1,0 +1,119 @@
+.container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: #0A0E27;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.canvas {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  display: block !important;
+}
+
+/* ── Title overlay ── */
+.titleOverlay {
+  position: absolute;
+  /* Shift up slightly so the text block reads as vertically centered */
+  top: 46%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  /* Subtle glass backdrop so text is always legible regardless of 3D content */
+  padding: 2.4rem 3.5rem;
+  background: rgba(10, 14, 39, 0.28);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: 0.25rem;
+}
+
+.redBar {
+  height: 3px;
+  width: 100%;
+  background: linear-gradient(90deg, transparent, #EF1E24 30%, #EF1E24 70%, transparent);
+  box-shadow: 0 0 18px rgba(239, 30, 36, 0.9);
+  margin-bottom: 1.6rem;
+  transform-origin: left;
+}
+
+.label {
+  font-family: 'Space Grotesk', monospace;
+  font-size: clamp(1.1rem, 2.4vw, 1.5rem);
+  font-weight: 600;
+  letter-spacing: 0.65em;
+  color: #EF1E24;
+  margin: 0 0 0.3rem;
+  text-transform: uppercase;
+  line-height: 1;
+  text-shadow: 0 0 20px rgba(239, 30, 36, 0.6);
+}
+
+.title {
+  font-family: 'Space Grotesk', monospace;
+  font-size: clamp(3.4rem, 8vw, 6rem);
+  font-weight: 700;
+  color: #FFFFFF;
+  margin: 0;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow:
+    0 0 40px rgba(0, 217, 255, 0.38),
+    0 0 90px rgba(0, 217, 255, 0.18);
+}
+
+.subtitle {
+  font-family: 'Roboto Mono', monospace;
+  font-size: clamp(0.65rem, 1.1vw, 0.82rem);
+  font-weight: 400;
+  letter-spacing: 0.3em;
+  color: #B0B5C1;
+  margin: 0.8rem 0 0;
+  text-transform: uppercase;
+}
+
+.cyanBar {
+  height: 2px;
+  width: 100%;
+  background: linear-gradient(90deg, transparent, #00D9FF 30%, #00D9FF 70%, transparent);
+  box-shadow: 0 0 18px rgba(0, 217, 255, 0.9);
+  margin-top: 1.6rem;
+  transform-origin: left;
+}
+
+/* ── Skip button ── */
+.skipBtn {
+  position: absolute;
+  bottom: 2rem;
+  right: 2rem;
+  background: transparent;
+  border: 1px solid rgba(0, 217, 255, 0.25);
+  color: rgba(176, 181, 193, 0.65);
+  font-family: 'Space Grotesk', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  padding: 0.45rem 0.9rem;
+  cursor: pointer;
+  transition: all 300ms ease;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+}
+
+.skipBtn:hover {
+  border-color: rgba(0, 217, 255, 0.65);
+  color: #00D9FF;
+  transform: none;
+  box-shadow: 0 0 10px rgba(0, 217, 255, 0.2);
+}

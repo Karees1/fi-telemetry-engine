@@ -1,0 +1,40 @@
+.root {
+  width: 100vw;
+  height: 100vh;
+  background: #0A0E27;
+  overflow: hidden;
+  position: relative;
+}
+
+.canvasLayer {
+  position: absolute;
+  inset: 0;
+}
+
+.noTrack {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.noTrackText {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  color: #6B7280;
+}
+
+.timelineBar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 272px;
+  height: 68px;
+  z-index: 30;
+  background: rgba(10, 14, 39, 0.88);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid rgba(0, 217, 255, 0.1);
+  border-right: 1px solid rgba(0, 217, 255, 0.1);
+}
