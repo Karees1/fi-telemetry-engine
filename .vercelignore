@@ -1,0 +1,8 @@
+node_modules
+.next
+cache
+services/python/__pycache__
+services/python/*.pyc
+*.pyc
+.env.local
+tsconfig.tsbuildinfo
