@@ -38,21 +38,21 @@ const CAR_CONFIG = {
 //           side sweep, intimate front face.
 const CAMERA_SHOTS = {
   mercedes: [
-    { pos: [-7, 3.5, 13],  target: [0, 1.0, 0], dur: 2.5 },
-    { pos: [0,  1.4, 11],  target: [0, 1.3, 0], dur: 2.0 },
-    { pos: [4,  2.5, 13],  target: [0, 0.8, 0], dur: 1.5 },
+    { pos: [-7, 3.5, 13], target: [0, 1.0, 0], dur: 2.5 },
+    { pos: [0, 1.4, 11], target: [0, 1.3, 0], dur: 2.0 },
+    { pos: [4, 2.5, 13], target: [0, 0.8, 0], dur: 1.5 },
   ],
   porsche: [
     // 1 — Low front attack: camera barely clears the floor, nose aimed at lens
-    { pos: [4,   0.3,  8],  target: [0, 0.6, 0], dur: 2.2 },
+    { pos: [4, 0.3, 8], target: [0, 0.6, 0], dur: 2.2 },
     // 2 — Rear haunches: behind-left, 911's wide rump + whale-tail in frame
-    { pos: [-5,  2.5, -9],  target: [0, 1.0, 0], dur: 2.8 },
+    { pos: [-5, 2.5, -9], target: [0, 1.0, 0], dur: 2.8 },
     // 3 — Bird's eye: high orbital looking straight down at the roof sculpture
-    { pos: [2,  10,   5],   target: [0, 0.2, 0], dur: 2.5 },
+    { pos: [2, 10, 5], target: [0, 0.2, 0], dur: 2.5 },
     // 4 — Driver's side sweep: low raking angle along the flared rear fender
-    { pos: [-10, 1.8,  4],  target: [0, 0.9, 0], dur: 2.2 },
+    { pos: [-10, 1.8, 4], target: [0, 0.9, 0], dur: 2.2 },
     // 5 — Intimate front face: headlight level, tight — then car launches
-    { pos: [0,   1.0,  6],  target: [0, 1.0, 0], dur: 2.0 },
+    { pos: [0, 1.0, 6], target: [0, 1.0, 0], dur: 2.0 },
   ],
 };
 
@@ -96,7 +96,7 @@ function CarModel({ carKey, meshRef, onLoaded }) {
 function Lights() {
   return (
     <>
-      <Environment preset="studio" />
+      <Environment preset="city" />
       <ambientLight intensity={0.18} />
 
       {/* Key light — warm, directional, defines the car's shape */}
@@ -157,7 +157,7 @@ function CinematicCamera({ activeCarKey, phase, onPhaseComplete }) {
     tlRef.current = gsap.timeline();
     tlRef.current
       .to(camera.position, { x: first.pos[0], y: first.pos[1], z: first.pos[2], duration: 1.8, ease: 'power2.inOut' })
-      .to(target.current,  { x: first.target[0], y: first.target[1], z: first.target[2], duration: 1.8, ease: 'power2.inOut' }, '<');
+      .to(target.current, { x: first.target[0], y: first.target[1], z: first.target[2], duration: 1.8, ease: 'power2.inOut' }, '<');
   }, [activeCarKey, phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // During reveal: walk through all shots for this car, then signal driveoff.
@@ -169,7 +169,7 @@ function CinematicCamera({ activeCarKey, phase, onPhaseComplete }) {
     shots.forEach(shot => {
       tlRef.current
         .to(camera.position, { x: shot.pos[0], y: shot.pos[1], z: shot.pos[2], duration: shot.dur, ease: 'power1.inOut' })
-        .to(target.current,  { x: shot.target[0], y: shot.target[1], z: shot.target[2], duration: shot.dur, ease: 'power1.inOut' }, '<');
+        .to(target.current, { x: shot.target[0], y: shot.target[1], z: shot.target[2], duration: shot.dur, ease: 'power1.inOut' }, '<');
     });
     return () => tlRef.current?.kill();
   }, [phase, activeCarKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -184,7 +184,7 @@ function CinematicCamera({ activeCarKey, phase, onPhaseComplete }) {
     } else {
       // Porsche: camera creeps forward as the car launches into the lens
       gsap.to(camera.position, { x: 0, y: 0.6, z: 5.5, duration: 1.1, ease: 'power4.in' });
-      gsap.to(target.current,  { y: 0.8, duration: 1.1 });
+      gsap.to(target.current, { y: 0.8, duration: 1.1 });
     }
   }, [phase, activeCarKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -198,8 +198,8 @@ function CinematicCamera({ activeCarKey, phase, onPhaseComplete }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function Scene({ activeCarKey, phase, setPhase, onCarComplete, onBothLoaded }) {
   const mercedesRef = useRef();
-  const porscheRef  = useRef();
-  const loadedRef   = useRef({ mercedes: false, porsche: false });
+  const porscheRef = useRef();
+  const loadedRef = useRef({ mercedes: false, porsche: false });
   const [bothLoaded, setBothLoaded] = useState(false);
 
   const handleModelLoaded = (carKey) => {
@@ -229,12 +229,12 @@ function Scene({ activeCarKey, phase, setPhase, onCarComplete, onBothLoaded }) {
     if (activeCarKey === 'porsche') {
       const tl = gsap.timeline({ onComplete: onCarComplete });
       tl.to(activeRef.current.position, { x: -0.3, duration: 0.15, ease: 'power2.out' })
-        .to(activeRef.current.position, { z: 22,   duration: 1.1,  ease: 'power4.in'  })
-        .to(activeRef.current.scale,    { x: 6, y: 6, z: 6, duration: 1.1, ease: 'power4.in' }, '<');
+        .to(activeRef.current.position, { z: 22, duration: 1.1, ease: 'power4.in' })
+        .to(activeRef.current.scale, { x: 6, y: 6, z: 6, duration: 1.1, ease: 'power4.in' }, '<');
     } else {
       const tl = gsap.timeline({ onComplete: onCarComplete });
       tl.to(activeRef.current.position, { x: -0.3, duration: 0.15, ease: 'power2.out' })
-        .to(activeRef.current.position, { x: 40,   duration: 1.1,  ease: 'power4.in'  })
+        .to(activeRef.current.position, { x: 40, duration: 1.1, ease: 'power4.in' })
         .to(activeRef.current.rotation, { y: -0.1, duration: 0.8 }, '<');
     }
   }, [phase, activeCarKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -273,7 +273,7 @@ function Scene({ activeCarKey, phase, setPhase, onCarComplete, onBothLoaded }) {
       {/* Both models always in scene — inactive one sits at x = -50 */}
       <Suspense fallback={null}>
         <CarModel carKey="mercedes" meshRef={mercedesRef} onLoaded={handleModelLoaded} />
-        <CarModel carKey="porsche"  meshRef={porscheRef}  onLoaded={handleModelLoaded} />
+        <CarModel carKey="porsche" meshRef={porscheRef} onLoaded={handleModelLoaded} />
       </Suspense>
 
       <EffectComposer>

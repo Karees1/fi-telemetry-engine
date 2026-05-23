@@ -1,5 +1,8 @@
 import { NextRequest } from 'next/server';
 
+// Edge runtime: no 10 s timeout, supports streaming SSE responses
+export const runtime = 'edge';
+
 const PYTHON_URL = process.env.PYTHON_SERVICE_URL ?? 'http://localhost:5000';
 
 /**

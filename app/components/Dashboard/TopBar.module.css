@@ -12,7 +12,12 @@
   background: rgba(10, 14, 39, 0.88);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid rgba(0, 217, 255, 0.12);
+  /* allow horizontal scroll on very narrow screens rather than breaking layout */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
+.root::-webkit-scrollbar { display: none; }
 
 .backBtn {
   display: flex;
@@ -200,4 +205,30 @@
   border-color: rgba(0, 217, 255, 0.6);
   color: #00D9FF;
   box-shadow: 0 0 10px rgba(0, 217, 255, 0.15);
+}
+
+/* ── Laptop (768px – 1023px) ─────────────────────────────────────────────────  */
+@media (max-width: 1023px) {
+  .root { gap: 0.5rem; padding: 0 0.875rem; }
+  .raceYear { display: none; }
+  .raceName { font-size: 0.8rem; }
+}
+
+/* ── Mobile (< 768px) ─────────────────────────────────────────────────────────  */
+@media (max-width: 767px) {
+  .root { gap: 0.375rem; padding: 0 0.625rem; }
+  /* Camera modes and heatmap toggle move to sidebar on mobile — hide in top bar */
+  .cameraGroup { display: none; }
+  .toggleBtn   { display: none; }
+  /* Keep driver pills but allow horizontal scroll within their container */
+  .driverPills {
+    overflow-x: auto;
+    scrollbar-width: none;
+    max-width: 42vw;
+    flex-wrap: nowrap;
+  }
+  .driverPills::-webkit-scrollbar { display: none; }
+  /* Compact dividers */
+  .divider { height: 16px; }
+  .raceName { font-size: 0.72rem; max-width: 28vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }

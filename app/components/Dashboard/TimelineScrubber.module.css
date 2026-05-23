@@ -116,3 +116,13 @@
   min-width: 72px;
   text-align: right;
 }
+
+/* ── Mobile (< 768px) ─────────────────────────────────────────────────────────  */
+@media (max-width: 767px) {
+  .root { gap: 0.5rem; padding: 0 0.75rem; }
+  .playBtn { width: 30px; height: 30px; flex-shrink: 0; }
+  /* Hide 0.25× and 0.5× speed buttons — tight on mobile */
+  .speedBtn:nth-child(-n+2) { display: none; }
+  .speedGroup { gap: 0.15rem; }
+  .time { font-size: 0.65rem; min-width: 58px; }
+}

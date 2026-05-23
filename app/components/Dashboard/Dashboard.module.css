@@ -38,3 +38,52 @@
   border-top: 1px solid rgba(0, 217, 255, 0.1);
   border-right: 1px solid rgba(0, 217, 255, 0.1);
 }
+
+/* ── Responsive: sidebar narrower on laptop ─────────────────────────────────── */
+@media (max-width: 1023px) {
+  .timelineBar { right: 220px; }
+}
+
+/* ── Responsive: mobile — sidebar becomes bottom sheet, timeline is full width ─ */
+@media (max-width: 767px) {
+  .timelineBar {
+    right: 0;
+    height: 60px;
+    border-right: none;
+  }
+}
+
+/* ── Mobile sidebar toggle button ─────────────────────────────────────────────  */
+.sidebarToggle {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .sidebarToggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    right: 1rem;
+    bottom: 76px;
+    z-index: 40;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(10, 14, 39, 0.92);
+    border: 1.5px solid rgba(0, 217, 255, 0.45);
+    color: #00D9FF;
+    font-size: 1.1rem;
+    cursor: pointer;
+    box-shadow: 0 0 16px rgba(0, 217, 255, 0.2);
+    transition: background 0.2s, box-shadow 0.2s;
+  }
+  .sidebarToggle:hover {
+    background: rgba(0, 217, 255, 0.12);
+    box-shadow: 0 0 20px rgba(0, 217, 255, 0.35);
+  }
+  .sidebarToggleActive {
+    background: rgba(0, 217, 255, 0.18);
+    border-color: rgba(0, 217, 255, 0.8);
+  }
+}

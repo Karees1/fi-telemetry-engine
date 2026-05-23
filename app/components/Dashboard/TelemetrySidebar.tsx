@@ -93,9 +93,10 @@ interface TelemetrySidebarProps {
   drivers: DriverMeta[];
   laps: LapRow[];
   onLoadLap: (driver: string, lapNumber: number) => Promise<boolean>;
+  mobileOpen?: boolean;
 }
 
-export function TelemetrySidebar({ telemetry, drivers, laps, onLoadLap }: TelemetrySidebarProps) {
+export function TelemetrySidebar({ telemetry, drivers, laps, onLoadLap, mobileOpen = false }: TelemetrySidebarProps) {
   const primaryDriver = useDashboardStore(s => s.primaryDriver);
   const [lapPickerOpen, setLapPickerOpen] = useState(false);
   const [lapLoading,    setLapLoading]    = useState(false);
@@ -143,9 +144,11 @@ export function TelemetrySidebar({ telemetry, drivers, laps, onLoadLap }: Teleme
     useDashboardStore.getState().setIsPlaying(false);
   }, [primaryDriver, onLoadLap]);
 
+  const rootClass = `${styles.root}${mobileOpen ? ` ${styles.rootMobileOpen}` : ''}`;
+
   if (!driverTel) {
     return (
-      <motion.aside className={styles.root} initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3, duration: 0.4 }}>
+      <motion.aside className={rootClass} initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3, duration: 0.4 }}>
         <div className={styles.emptyState}><p className={styles.emptyText}>No driver selected</p></div>
       </motion.aside>
     );
@@ -153,7 +156,7 @@ export function TelemetrySidebar({ telemetry, drivers, laps, onLoadLap }: Teleme
 
   return (
     <motion.aside
-      className={styles.root}
+      className={rootClass}
       initial={{ opacity: 0, x: 24 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: 0.3, duration: 0.4 }}

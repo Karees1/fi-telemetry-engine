@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Race, SessionType } from '@/types';
 import { SessionLoadState } from '@/hooks/useSessionLoad';
@@ -25,6 +25,7 @@ interface DashboardProps {
 
 export function Dashboard({ loadState, race, session, onBack, onLoadLap }: DashboardProps) {
   const { setPrimaryDriver, reset } = useDashboardStore();
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // Auto-select first loaded driver as primary
   useEffect(() => {
@@ -71,7 +72,17 @@ export function Dashboard({ loadState, race, session, onBack, onLoadLap }: Dashb
         drivers={loadState.sessionMeta?.drivers ?? []}
         laps={loadState.laps}
         onLoadLap={onLoadLap}
+        mobileOpen={mobileSidebarOpen}
       />
+
+      {/* Mobile sidebar toggle — only visible on < 768px via CSS */}
+      <button
+        className={`${styles.sidebarToggle} ${mobileSidebarOpen ? styles.sidebarToggleActive : ''}`}
+        onClick={() => setMobileSidebarOpen(v => !v)}
+        aria-label="Toggle telemetry panel"
+      >
+        {mobileSidebarOpen ? '✕' : '⌇'}
+      </button>
 
       <footer className={styles.timelineBar}>
         {totalFrames > 0 && (
