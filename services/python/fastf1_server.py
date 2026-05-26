@@ -7,6 +7,8 @@ Listens on http://localhost:5000
 import os
 import json
 import time
+import queue
+import threading
 import numpy as np
 import pandas as pd
 import fastf1
@@ -97,6 +99,23 @@ def load_session():
     if not year or not round_n:
         return Response(sse_error("Missing year or round"), mimetype="text/event-stream", status=400)
 
+    def _run_in_thread(fn):
+        """Run fn() in a background thread; yield keep-alive SSE comments
+        every 15 s while waiting so Render's proxy doesn't drop the connection."""
+        result_q = queue.Queue()
+        def _worker():
+            try:
+                result_q.put(("ok", fn()))
+            except Exception as exc:
+                result_q.put(("err", str(exc)))
+        threading.Thread(target=_worker, daemon=True).start()
+        while True:
+            try:
+                status, value = result_q.get(timeout=15)
+                return status, value
+            except queue.Empty:
+                yield ": keep-alive\n\n"
+
     def stream():
         # ── 1. Connecting ──────────────────────────────────────────────────
         yield sse_event("connecting", {
@@ -110,15 +129,21 @@ def load_session():
             yield sse_error(f"Could not resolve session: {e}")
             return
 
-        # ── 2. Load metadata + laps (no full telemetry yet) ────────────────
-        try:
-            # laps=True is fast; telemetry=False skips the heavy download
-            session.load(laps=True, telemetry=False, weather=False, messages=False)
-        except Exception as e:
-            yield sse_error(f"Session load failed: {e}")
+        # ── 2. Load metadata + laps in background; ping while waiting ──────
+        status = None
+        for chunk in _run_in_thread(
+            lambda: session.load(laps=True, telemetry=False, weather=False, messages=False)
+        ):
+            if isinstance(chunk, tuple):
+                status, err = chunk
+            else:
+                yield chunk  # keep-alive comment
+
+        if status == "err":
+            yield sse_error(f"Session load failed: {err}")
             return
 
-        # Build driver list from session results
+        # ── 3. Emit session_meta ───────────────────────────────────────────
         driver_rows = []
         try:
             for _, row in session.results.iterrows():
@@ -130,7 +155,7 @@ def load_session():
                     "position":  int(row.get("Position", 0)) if row.get("Position") else None,
                 })
         except Exception:
-            pass  # results may be empty for practice sessions
+            pass
 
         session_id = f"{year}_{round_n}_{s_type}"
         yield sse_event("session_meta", {
@@ -143,7 +168,7 @@ def load_session():
             "drivers":   driver_rows,
         })
 
-        # ── 3. Lap times ───────────────────────────────────────────────────
+        # ── 4. Lap times ───────────────────────────────────────────────────
         laps_payload = []
         try:
             for _, lap in session.laps.iterrows():
@@ -162,20 +187,27 @@ def load_session():
 
         yield sse_event("lap_times", {"laps": laps_payload})
 
-        # ── 4. Reload with full telemetry ──────────────────────────────────
-        try:
-            session.load(laps=True, telemetry=True, weather=False, messages=False)
-        except Exception as e:
-            yield sse_error(f"Telemetry load failed: {e}")
+        # ── 5. Reload with full telemetry in background; ping while waiting ─
+        status = None
+        for chunk in _run_in_thread(
+            lambda: session.load(laps=True, telemetry=True, weather=False, messages=False)
+        ):
+            if isinstance(chunk, tuple):
+                status, err = chunk
+            else:
+                yield chunk
+
+        if status == "err":
+            yield sse_error(f"Telemetry load failed: {err}")
             return
 
-        # ── 5. Track layout (from fastest lap of any driver) ───────────────
+        # ── 6. Track layout ────────────────────────────────────────────────
         try:
             fastest = session.laps.pick_fastest()
             tel = fastest.get_telemetry()
-            x = normalise(tel["X"].values)
-            y = normalise(tel["Y"].values)
-            z = normalise(tel["Z"].values) if "Z" in tel.columns else [0.0] * len(x)
+            x    = normalise(tel["X"].values)
+            y    = normalise(tel["Y"].values)
+            z    = normalise(tel["Z"].values) if "Z" in tel.columns else [0.0] * len(x)
             dist = normalise(tel["Distance"].values)
             yield sse_event("track_layout", {
                 "x": x, "y": y, "z": z,
@@ -189,11 +221,9 @@ def load_session():
         except Exception as e:
             yield sse_event("warning", {"message": f"Track layout unavailable: {e}"})
 
-        # ── 6. Per-driver telemetry ────────────────────────────────────────
-        # Resolve which drivers to stream
+        # ── 7. Per-driver telemetry ────────────────────────────────────────
         requested = [d.strip().upper() for d in drivers.split(",") if d.strip()] if drivers else []
         if not requested:
-            # Default: top-5 fastest drivers
             try:
                 top = session.laps.groupby("Driver")["LapTime"].min().nsmallest(5).index.tolist()
                 requested = top
@@ -225,7 +255,7 @@ def load_session():
             except Exception as e:
                 yield sse_event("warning", {"message": f"Telemetry unavailable for {driver_code}: {e}"})
 
-        # ── 7. Done ────────────────────────────────────────────────────────
+        # ── 8. Done ────────────────────────────────────────────────────────
         yield sse_event("complete", {"sessionId": session_id})
 
     return Response(
