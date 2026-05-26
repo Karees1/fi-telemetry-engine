@@ -21,7 +21,19 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 fastf1.Cache.enable_cache(CACHE_DIR)
 
 app = Flask(__name__)
-CORS(app)  # Next.js dev server is on a different port
+CORS(app)
+
+# ── Startup cache warm-up ─────────────────────────────────────────────────────
+# Pre-fetch the 2024 + 2023 event schedules in the background so they're cached
+# before the first user request arrives. Failures are silently ignored.
+def _warm_cache():
+    for yr in (2024, 2023):
+        try:
+            fastf1.get_event_schedule(yr, include_testing=False)
+        except Exception:
+            pass
+
+threading.Thread(target=_warm_cache, daemon=True).start()
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -101,7 +113,7 @@ def load_session():
 
     def _run_in_thread(fn):
         """Run fn() in a background thread; yield keep-alive SSE comments
-        every 15 s while waiting so Render's proxy doesn't drop the connection."""
+        every 15 s while waiting. Yields (status, value) tuple when done."""
         result_q = queue.Queue()
         def _worker():
             try:
@@ -112,9 +124,22 @@ def load_session():
         while True:
             try:
                 status, value = result_q.get(timeout=15)
-                return status, value
+                yield (status, value)   # yield result — callers check isinstance(chunk, tuple)
+                return
             except queue.Empty:
                 yield ": keep-alive\n\n"
+
+    def _get_session(yr, rnd, stype, retries=3):
+        """get_session() with exponential-backoff retry for network failures."""
+        last_exc = None
+        for attempt in range(retries):
+            try:
+                return fastf1.get_session(yr, rnd, stype)
+            except Exception as exc:
+                last_exc = exc
+                if attempt < retries - 1:
+                    time.sleep(2 ** attempt)  # 1 s, 2 s
+        raise last_exc
 
     def stream():
         # ── 1. Connecting ──────────────────────────────────────────────────
@@ -123,13 +148,20 @@ def load_session():
             "year": year, "round": round_n, "session": s_type,
         })
 
-        try:
-            session = fastf1.get_session(year, round_n, s_type)
-        except Exception as e:
-            yield sse_error(f"Could not resolve session: {e}")
-            return
+        # ── 2. Resolve session (downloads schedule if not cached) ──────────
+        # Wrap in thread so keep-alives fire during retries / slow downloads.
+        session = None
+        for chunk in _run_in_thread(lambda: _get_session(year, round_n, s_type)):
+            if isinstance(chunk, tuple):
+                status, value = chunk
+                if status == "err":
+                    yield sse_error(f"Could not resolve session: {value}")
+                    return
+                session = value
+            else:
+                yield chunk  # keep-alive
 
-        # ── 2. Load metadata + laps in background; ping while waiting ──────
+        # ── 3. Load metadata + laps in background; ping while waiting ──────
         status = None
         for chunk in _run_in_thread(
             lambda: session.load(laps=True, telemetry=False, weather=False, messages=False)
@@ -137,7 +169,7 @@ def load_session():
             if isinstance(chunk, tuple):
                 status, err = chunk
             else:
-                yield chunk  # keep-alive comment
+                yield chunk  # keep-alive
 
         if status == "err":
             yield sse_error(f"Session load failed: {err}")
@@ -187,7 +219,7 @@ def load_session():
 
         yield sse_event("lap_times", {"laps": laps_payload})
 
-        # ── 5. Reload with full telemetry in background; ping while waiting ─
+        # ── 6. Reload with full telemetry in background; ping while waiting ─
         status = None
         for chunk in _run_in_thread(
             lambda: session.load(laps=True, telemetry=True, weather=False, messages=False)
