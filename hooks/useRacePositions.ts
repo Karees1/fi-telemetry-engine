@@ -52,12 +52,52 @@ const INITIAL: RacePositionState = {
   error: null,
 };
 
+// ── Cache serialisation helpers ───────────────────────────────────────────────
+// Float32Arrays must be converted to/from plain arrays for JSON storage.
+
+interface CachedPositionSeries {
+  t: number[]; x: number[]; y: number[]; status: string[];
+}
+
+interface RaceCachePayload {
+  sessionId: string;
+  drivers: RaceDriverInfo[];
+  bounds: RaceBounds;
+  totalTime: number;
+  positions: Record<string, CachedPositionSeries>;
+}
+
+function deserialisePositions(payload: RaceCachePayload): RacePositionData {
+  const positions = new Map<string, DriverPositionSeries>();
+  for (const [code, s] of Object.entries(payload.positions)) {
+    positions.set(code, {
+      t: new Float32Array(s.t),
+      x: new Float32Array(s.x),
+      y: new Float32Array(s.y),
+      status: s.status,
+    });
+  }
+  return { ...payload, positions };
+}
+
+function serialisePositions(data: RacePositionData): RaceCachePayload {
+  const positions: Record<string, CachedPositionSeries> = {};
+  data.positions.forEach((s, code) => {
+    positions[code] = {
+      t: Array.from(s.t),
+      x: Array.from(s.x),
+      y: Array.from(s.y),
+      status: s.status,
+    };
+  });
+  return { ...data, positions };
+}
+
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useRacePositions() {
   const [state, setState] = useState<RacePositionState>(INITIAL);
   const abortRef   = useRef<AbortController | null>(null);
-  // Accumulated data before we have everything
   const partialRef = useRef<{
     sessionId: string;
     drivers: RaceDriverInfo[];
@@ -66,7 +106,7 @@ export function useRacePositions() {
     totalTime: number;
   } | null>(null);
 
-  const load = useCallback((race: Race, sessionType: SessionType) => {
+  const load = useCallback(async (race: Race, sessionType: SessionType) => {
     abortRef.current?.abort();
     const abort = new AbortController();
     abortRef.current = abort;
@@ -74,6 +114,29 @@ export function useRacePositions() {
 
     setState({ ...INITIAL, stage: 'connecting' });
 
+    // ── 1. Cache-first check ──────────────────────────────────────────────────
+    const cacheParams = new URLSearchParams({
+      year: String(race.year), round: String(race.round), session: sessionType,
+    });
+    try {
+      const res = await fetch(`/api/cache/race?${cacheParams}`);
+      if (!abort.signal.aborted && res.ok) {
+        const { cached, data } = await res.json() as { cached: boolean; data: RaceCachePayload };
+        if (cached && data) {
+          setState({
+            stage:       'complete',
+            data:        deserialisePositions(data),
+            loadedCount: data.drivers.length,
+            error:       null,
+          });
+          return;
+        }
+      }
+    } catch { /* cache unavailable — proceed with SSE */ }
+
+    if (abort.signal.aborted) return;
+
+    // ── 2. Cache miss — connect to Python SSE ────────────────────────────────
     const params = new URLSearchParams({
       year:    String(race.year),
       round:   String(race.round),
@@ -116,12 +179,26 @@ export function useRacePositions() {
 
     es.addEventListener('complete', () => {
       if (partialRef.current) {
+        const data: RacePositionData = { ...partialRef.current };
         setState({
           stage:       'complete',
-          data:        { ...partialRef.current },
+          data,
           loadedCount: partialRef.current.positions.size,
           error:       null,
         });
+
+        // Store to Vercel Blob (fire and forget)
+        const payload = serialisePositions(data);
+        fetch('/api/cache/race', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            year:    String(race.year),
+            round:   String(race.round),
+            session: sessionType,
+            data:    payload,
+          }),
+        }).catch(() => {});
       } else {
         setState(s => ({ ...s, stage: 'complete' }));
       }

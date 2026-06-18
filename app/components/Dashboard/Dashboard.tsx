@@ -49,7 +49,7 @@ export function Dashboard({ loadState, race, session, onBack, onLoadLap }: Dashb
   // Start/stop race data loading when race mode toggles
   useEffect(() => {
     if (raceMode) {
-      loadRace(race, session);
+      void loadRace(race, session);
     } else {
       resetRace();
       setRaceTimeSeconds(0);

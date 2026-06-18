@@ -41,7 +41,7 @@ export default function App() {
     setSelectedRace(race);
     setSelectedSession(session);
     setPhase('uplink');
-    load(race, session);
+    void load(race, session);
   }, [load]);
 
   const handleUplinkComplete = () => setPhase('dashboard');

@@ -9,7 +9,8 @@ out/
 build/
 
 # FastF1 cache — never commit (can be hundreds of MB)
-cache/
+/cache/
+/services/python/cache/
 
 # Large 3D model files — only the two used models are tracked
 # (mercedes_-_amg_sl_63.glb and porsche_911_turbo_s.glb)
