@@ -7,18 +7,21 @@ import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 
 import { TrackLayout, DriverTelemetry } from '@/hooks/useSessionLoad';
+import { RacePositionData }             from '@/hooks/useRacePositions';
 import { createNormalizer, NormalizedPoint } from '@/lib/three-helpers';
-import { useDashboardStore } from '@/store/dashboardStore';
+import { useDashboardStore }            from '@/store/dashboardStore';
 
-import { TrackMesh } from './TrackMesh';
-import { SpeedHeatmap } from './SpeedHeatmap';
-import { CarModel } from './CarModel';
-import { CameraRig } from './CameraRig';
+import { TrackMesh }       from './TrackMesh';
+import { TrackRibbon }     from './TrackRibbon';
+import { SpeedHeatmap }    from './SpeedHeatmap';
+import { CarModel }        from './CarModel';
+import { RaceCarDot }      from './RaceCarDot';
+import { CameraRig }       from './CameraRig';
 import { TelemetryFloaters } from './TelemetryFloaters';
 
-// ── Playback controller ───────────────────────────────────────────────────────
+// ── Lap-analysis playback ─────────────────────────────────────────────────────
 
-function PlaybackController({ totalFrames, lapTimeMs }: { totalFrames: number; lapTimeMs: number }) {
+function LapPlaybackController({ totalFrames, lapTimeMs }: { totalFrames: number; lapTimeMs: number }) {
   const isPlaying     = useDashboardStore(s => s.isPlaying);
   const playbackSpeed = useDashboardStore(s => s.playbackSpeed);
   const setFrameIndex = useDashboardStore(s => s.setFrameIndex);
@@ -30,12 +33,27 @@ function PlaybackController({ totalFrames, lapTimeMs }: { totalFrames: number; l
     const pps    = totalFrames / lapSec;
     const fi     = useDashboardStore.getState().frameIndex;
     const next   = fi + delta * pps * playbackSpeed;
-    if (next >= totalFrames - 1) {
-      setFrameIndex(totalFrames - 1);
-      setIsPlaying(false);
-    } else {
-      setFrameIndex(next);
-    }
+    if (next >= totalFrames - 1) { setFrameIndex(totalFrames - 1); setIsPlaying(false); }
+    else                          { setFrameIndex(next); }
+  });
+
+  return null;
+}
+
+// ── Full-race playback ────────────────────────────────────────────────────────
+
+function RacePlaybackController({ totalTime }: { totalTime: number }) {
+  const isPlaying         = useDashboardStore(s => s.isPlaying);
+  const playbackSpeed     = useDashboardStore(s => s.playbackSpeed);
+  const setRaceTime       = useDashboardStore(s => s.setRaceTimeSeconds);
+  const setIsPlaying      = useDashboardStore(s => s.setIsPlaying);
+
+  useFrame((_, delta) => {
+    if (!isPlaying || totalTime === 0) return;
+    const t    = useDashboardStore.getState().raceTimeSeconds;
+    const next = t + delta * playbackSpeed;
+    if (next >= totalTime) { setRaceTime(totalTime); setIsPlaying(false); }
+    else                   { setRaceTime(next); }
   });
 
   return null;
@@ -56,7 +74,6 @@ function Starfield({ count = 1800 }: { count?: number }) {
       positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
       positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
       positions[i * 3 + 2] = r * Math.cos(phi);
-      // Subtle cyan-to-white variation
       const t = Math.random();
       colors[i * 3]     = THREE.MathUtils.lerp(0.7, 1, t);
       colors[i * 3 + 1] = THREE.MathUtils.lerp(0.9, 1, t);
@@ -65,9 +82,7 @@ function Starfield({ count = 1800 }: { count?: number }) {
     return { positions, colors };
   }, [count]);
 
-  useFrame((_, delta) => {
-    if (ref.current) ref.current.rotation.y += delta * 0.004;
-  });
+  useFrame((_, delta) => { if (ref.current) ref.current.rotation.y += delta * 0.004; });
 
   return (
     <points ref={ref}>
@@ -80,19 +95,13 @@ function Starfield({ count = 1800 }: { count?: number }) {
   );
 }
 
-// ── Ground plane ──────────────────────────────────────────────────────────────
+// ── Ground ────────────────────────────────────────────────────────────────────
 
 function GroundPlane() {
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.55, 0]} receiveShadow={false}>
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.55, 0]}>
       <planeGeometry args={[50, 50]} />
-      <meshStandardMaterial
-        color="#040914"
-        roughness={0.95}
-        metalness={0.05}
-        transparent
-        opacity={0.9}
-      />
+      <meshStandardMaterial color="#040914" roughness={0.95} metalness={0.05} transparent opacity={0.9} />
     </mesh>
   );
 }
@@ -102,15 +111,24 @@ function GroundPlane() {
 interface SceneContentsProps {
   track: TrackLayout;
   telemetry: Map<string, DriverTelemetry>;
+  racePositions?: RacePositionData | null;
 }
 
-function SceneContents({ track, telemetry }: SceneContentsProps) {
+function SceneContents({ track, telemetry, racePositions }: SceneContentsProps) {
+  const raceMode       = useDashboardStore(s => s.raceMode);
   const primaryDriver  = useDashboardStore(s => s.primaryDriver);
   const showHeatmap    = useDashboardStore(s => s.showHeatmap);
   const carPositionRef = useRef<[number, number, number]>([0, 0, 0]);
 
-  const normalize = useMemo(() => createNormalizer(track.bounds), [track.bounds]);
+  // Normalizer uses race-position bounds in race mode for accurate GPS mapping,
+  // or track bounds in lap-analysis mode.
+  const bounds = (raceMode && racePositions)
+    ? racePositions.bounds
+    : track.bounds;
 
+  const normalize = useMemo(() => createNormalizer(bounds), [bounds]);
+
+  // Lap-analysis track points
   const trackPoints = useMemo((): [number, number, number][] =>
     track.x.map((x, i) => {
       const n = normalize(x, track.y[i], track.z[i] ?? 0);
@@ -119,6 +137,7 @@ function SceneContents({ track, telemetry }: SceneContentsProps) {
     [track, normalize]
   );
 
+  // Lap-analysis driver entries
   const driverEntries = useMemo(() =>
     Array.from(telemetry.entries()).map(([code, tel], index) => ({
       code,
@@ -144,6 +163,13 @@ function SceneContents({ track, telemetry }: SceneContentsProps) {
     }));
   }, [primaryTel, normalize]);
 
+  // ── Race mode primary car ref ───────────────────────────────────────────────
+  const primaryRaceDriver = raceMode && racePositions
+    ? (primaryDriver && racePositions.positions.has(primaryDriver)
+        ? primaryDriver
+        : racePositions.drivers[0]?.code ?? null)
+    : null;
+
   return (
     <>
       {/* Lighting */}
@@ -157,24 +183,52 @@ function SceneContents({ track, telemetry }: SceneContentsProps) {
       <Starfield />
       <GroundPlane />
 
-      {!showHeatmap && trackPoints.length > 1 && <TrackMesh points={trackPoints} />}
-      {showHeatmap  && heatmapPoints.length > 1 && <SpeedHeatmap points={heatmapPoints} />}
+      {/* ── Track ─────────────────────────────────────────────────────────── */}
+      {raceMode ? (
+        trackPoints.length > 1 && <TrackRibbon points={trackPoints} />
+      ) : (
+        <>
+          {!showHeatmap && trackPoints.length > 1 && <TrackMesh points={trackPoints} />}
+          {showHeatmap  && heatmapPoints.length > 1 && <SpeedHeatmap points={heatmapPoints} />}
+        </>
+      )}
 
-      {driverEntries.map(({ code, points, index }) => {
-        if (points.length < 2) return null;
-        const isPrimary = code === (primaryDriver ?? driverEntries[0]?.code);
-        return (
-          <CarModel
-            key={code}
-            points={points}
-            driverIndex={index}
-            primaryFrames={totalFrames}
-            carPositionRef={isPrimary ? carPositionRef : undefined}
-          />
-        );
-      })}
+      {/* ── Cars ──────────────────────────────────────────────────────────── */}
+      {raceMode && racePositions ? (
+        Array.from(racePositions.positions.entries()).map(([code, posData]) => {
+          const driverInfo = racePositions.drivers.find(d => d.code === code);
+          const isPrimary  = code === primaryRaceDriver;
+          return (
+            <RaceCarDot
+              key={code}
+              code={code}
+              color={driverInfo?.color ?? '#00D9FF'}
+              team={driverInfo?.team   ?? ''}
+              posData={posData}
+              normalizer={normalize}
+              isPrimary={isPrimary}
+              carPositionRef={isPrimary ? carPositionRef : undefined}
+            />
+          );
+        })
+      ) : (
+        driverEntries.map(({ code, points, index }) => {
+          if (points.length < 2) return null;
+          const isPrimary = code === (primaryDriver ?? driverEntries[0]?.code);
+          return (
+            <CarModel
+              key={code}
+              points={points}
+              driverIndex={index}
+              primaryFrames={totalFrames}
+              carPositionRef={isPrimary ? carPositionRef : undefined}
+            />
+          );
+        })
+      )}
 
-      {primaryEntry && primaryTel && primaryEntry.points.length > 1 && (
+      {/* Telemetry floaters only in lap-analysis mode */}
+      {!raceMode && primaryEntry && primaryTel && primaryEntry.points.length > 1 && (
         <TelemetryFloaters
           carPositionRef={carPositionRef}
           speedArr={primaryTel.points.speed}
@@ -185,7 +239,13 @@ function SceneContents({ track, telemetry }: SceneContentsProps) {
       )}
 
       <CameraRig carPositionRef={carPositionRef} />
-      <PlaybackController totalFrames={totalFrames} lapTimeMs={lapTimeMs} />
+
+      {/* Playback controller switches per mode */}
+      {raceMode && racePositions ? (
+        <RacePlaybackController totalTime={racePositions.totalTime} />
+      ) : (
+        <LapPlaybackController totalFrames={totalFrames} lapTimeMs={lapTimeMs} />
+      )}
 
       <EffectComposer>
         <Bloom intensity={0.55} luminanceThreshold={0.55} luminanceSmoothing={0.85} mipmapBlur />
@@ -199,7 +259,13 @@ function SceneContents({ track, telemetry }: SceneContentsProps) {
 
 // ── Public component ──────────────────────────────────────────────────────────
 
-export function Track3DScene({ track, telemetry }: { track: TrackLayout; telemetry: Map<string, DriverTelemetry> }) {
+interface Track3DSceneProps {
+  track: TrackLayout;
+  telemetry: Map<string, DriverTelemetry>;
+  racePositions?: RacePositionData | null;
+}
+
+export function Track3DScene({ track, telemetry, racePositions }: Track3DSceneProps) {
   return (
     <Canvas
       camera={{ position: [0, 9, 11], fov: 52 }}
@@ -208,7 +274,7 @@ export function Track3DScene({ track, telemetry }: { track: TrackLayout; telemet
       gl={{ antialias: true, alpha: true }}
     >
       <Suspense fallback={null}>
-        <SceneContents track={track} telemetry={telemetry} />
+        <SceneContents track={track} telemetry={telemetry} racePositions={racePositions} />
       </Suspense>
     </Canvas>
   );

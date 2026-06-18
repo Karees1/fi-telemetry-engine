@@ -38,6 +38,8 @@ export function TopBar({ race, session, drivers, loadedDrivers, onBack }: TopBar
   const setCameraMode    = useDashboardStore(s => s.setCameraMode);
   const showHeatmap      = useDashboardStore(s => s.showHeatmap);
   const setShowHeatmap   = useDashboardStore(s => s.setShowHeatmap);
+  const raceMode         = useDashboardStore(s => s.raceMode);
+  const setRaceMode      = useDashboardStore(s => s.setRaceMode);
 
   return (
     <motion.header
@@ -118,6 +120,16 @@ export function TopBar({ race, session, drivers, loadedDrivers, onBack }: TopBar
         onClick={() => setShowHeatmap(!showHeatmap)}
       >
         {showHeatmap ? 'SPEED MAP' : 'TRACK LINE'}
+      </button>
+
+      <div className={styles.divider} />
+
+      {/* Race replay toggle */}
+      <button
+        className={`${styles.toggleBtn} ${raceMode ? styles.toggleBtnActive : ''}`}
+        onClick={() => setRaceMode(!raceMode)}
+      >
+        {raceMode ? 'RACE LIVE' : 'RACE REPLAY'}
       </button>
     </motion.header>
   );

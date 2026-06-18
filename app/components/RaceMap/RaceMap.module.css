@@ -1,0 +1,45 @@
+/* RaceMap.module.css — letterboxed 1920×1080 race tracker */
+
+/* Full-viewport dark backdrop */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: #05070b;
+  z-index: 50;
+  overflow: hidden;
+}
+
+/* The 1920×1080 stage, centered and CSS-scaled to fit any viewport */
+.stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1920px;
+  height: 1080px;
+  /* transform is set inline: translate(-50%,-50%) scale(s) */
+  transform-origin: center center;
+  background: #07090e;
+  overflow: hidden;
+}
+
+/* ── Animations used by inline styles ── */
+@keyframes rmPulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px #FF3B3B; }
+  50%       { opacity: 0.4; box-shadow: 0 0 3px #FF3B3B; }
+}
+
+@keyframes rmFeedIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes rmBattleIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px) scale(0.95); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+
+/* Make the keyframe names available to inline JSX via CSS custom properties */
+:root {
+  --rm-anim-pulse: rmPulse;
+  --rm-anim-feed:  rmFeedIn;
+}

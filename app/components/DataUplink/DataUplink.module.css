@@ -187,6 +187,27 @@
   color: rgba(0, 217, 255, 0.3);
 }
 
+/* ── Warnings ── */
+.warningList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.6rem 1rem;
+  border: 1px solid rgba(239, 30, 36, 0.2);
+  border-radius: 0.2rem;
+  background: rgba(239, 30, 36, 0.04);
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.warningMsg {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  color: rgba(239, 30, 36, 0.75);
+  line-height: 1.5;
+}
+
 /* ── Error ── */
 .errorMsg {
   font-family: 'Roboto Mono', monospace;
@@ -197,6 +218,52 @@
   border: 1px solid rgba(239, 30, 36, 0.3);
   border-radius: 0.2rem;
   background: rgba(239, 30, 36, 0.05);
+}
+
+/* ── No-data hint ── */
+.noDataHint {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid rgba(239, 30, 36, 0.35);
+  border-radius: 0.25rem;
+  background: rgba(239, 30, 36, 0.06);
+}
+
+.noDataTitle {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  color: #EF1E24;
+}
+
+.noDataSub {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  color: rgba(176, 181, 193, 0.55);
+  line-height: 1.7;
+}
+
+.noDataBtn {
+  align-self: flex-start;
+  margin-top: 0.25rem;
+  padding: 0.45rem 1rem;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  color: rgba(239, 30, 36, 0.85);
+  background: transparent;
+  border: 1px solid rgba(239, 30, 36, 0.4);
+  border-radius: 0.2rem;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.noDataBtn:hover {
+  background: rgba(239, 30, 36, 0.1);
+  border-color: rgba(239, 30, 36, 0.7);
 }
 
 /* ── Progress bar ── */

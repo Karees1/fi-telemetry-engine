@@ -96,7 +96,9 @@ interface DataUplinkProps {
 
 export function DataUplink({ loadState, raceName, onComplete }: DataUplinkProps) {
   const { stage, sessionMeta, loadedDrivers, error } = loadState;
+  const warnings: string[] = (loadState as unknown as { warnings?: string[] }).warnings ?? [];
   const currentIdx = stageIndex(stage);
+  const completeWithNoData = stage === 'complete' && !loadState.track && loadedDrivers.length === 0;
 
   // Auto-advance to dashboard once complete
   useEffect(() => {
@@ -193,6 +195,21 @@ export function DataUplink({ loadState, raceName, onComplete }: DataUplinkProps)
           )}
         </AnimatePresence>
 
+        {/* Warning log — shows when Python service emits warnings */}
+        <AnimatePresence>
+          {warnings.length > 0 && (
+            <motion.div
+              className={styles.warningList}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+            >
+              {warnings.map((w: string, i: number) => (
+                <p key={i} className={styles.warningMsg}>⚠ {w}</p>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Error state */}
         <AnimatePresence>
           {error && (
@@ -203,6 +220,26 @@ export function DataUplink({ loadState, raceName, onComplete }: DataUplinkProps)
             >
               ⚠ {error}
             </motion.p>
+          )}
+        </AnimatePresence>
+
+        {/* Complete but no data — show retry hint */}
+        <AnimatePresence>
+          {completeWithNoData && (
+            <motion.div
+              className={styles.noDataHint}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <p className={styles.noDataTitle}>TELEMETRY UNAVAILABLE</p>
+              <p className={styles.noDataSub}>
+                The Python service returned no track or telemetry data.<br />
+                Check Render service logs for memory or cache errors.
+              </p>
+              <button className={styles.noDataBtn} onClick={onComplete}>
+                ENTER DASHBOARD ANYWAY
+              </button>
+            </motion.div>
           )}
         </AnimatePresence>
       </div>

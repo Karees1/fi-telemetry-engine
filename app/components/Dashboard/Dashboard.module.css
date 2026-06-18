@@ -26,6 +26,70 @@
   color: #6B7280;
 }
 
+.noTrackError {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-width: 480px;
+  padding: 2rem;
+  border: 1px solid rgba(239, 30, 36, 0.3);
+  border-radius: 0.35rem;
+  background: rgba(239, 30, 36, 0.04);
+}
+
+.noTrackErrorTitle {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  color: #EF1E24;
+}
+
+.noTrackErrorSub {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  color: rgba(176, 181, 193, 0.55);
+  line-height: 1.7;
+}
+
+.noTrackWarnings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 2px solid rgba(239, 30, 36, 0.3);
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.noTrackWarningMsg {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.56rem;
+  letter-spacing: 0.06em;
+  color: rgba(239, 30, 36, 0.65);
+  line-height: 1.5;
+}
+
+.noTrackRetry {
+  align-self: flex-start;
+  margin-top: 0.5rem;
+  padding: 0.5rem 1.1rem;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  color: #00D9FF;
+  background: transparent;
+  border: 1px solid rgba(0, 217, 255, 0.35);
+  border-radius: 0.2rem;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.noTrackRetry:hover {
+  background: rgba(0, 217, 255, 0.08);
+  border-color: rgba(0, 217, 255, 0.6);
+}
+
 .timelineBar {
   position: fixed;
   bottom: 0;
@@ -51,6 +115,24 @@
     height: 60px;
     border-right: none;
   }
+}
+
+/* ── Race data loading overlay ────────────────────────────────────────────────  */
+.raceLoadOverlay {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  color: rgba(0, 217, 255, 0.7);
+  background: rgba(10, 14, 39, 0.88);
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  border-radius: 0.2rem;
+  padding: 0.4rem 1rem;
+  white-space: nowrap;
 }
 
 /* ── Mobile sidebar toggle button ─────────────────────────────────────────────  */

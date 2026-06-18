@@ -7,66 +7,81 @@ import styles from './TimelineScrubber.module.css';
 interface TimelineScrubberProps {
   totalFrames: number;
   lapTimeMs: number;
+  raceMode?: boolean;
+  totalRaceTime?: number;
 }
 
-function formatTime(ms: number): string {
+function formatLapTime(ms: number): string {
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
   const rem = (ms / 1000 - m * 60).toFixed(3);
   return `${m}:${parseFloat(rem).toFixed(3).padStart(6, '0')}`;
 }
 
-export function TimelineScrubber({ totalFrames, lapTimeMs }: TimelineScrubberProps) {
+function formatRaceTime(s: number): string {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
+
+const LAP_SPEEDS  = [0.25, 0.5, 1, 2, 4];
+const RACE_SPEEDS = [1, 5, 10, 30, 60];
+
+export function TimelineScrubber({ totalFrames, lapTimeMs, raceMode = false, totalRaceTime = 0 }: TimelineScrubberProps) {
   const fillRef  = useRef<HTMLDivElement>(null);
   const timeRef  = useRef<HTMLSpanElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
 
-  const isPlaying     = useDashboardStore(s => s.isPlaying);
-  const playbackSpeed = useDashboardStore(s => s.playbackSpeed);
-  const setIsPlaying  = useDashboardStore(s => s.setIsPlaying);
+  const isPlaying        = useDashboardStore(s => s.isPlaying);
+  const playbackSpeed    = useDashboardStore(s => s.playbackSpeed);
+  const setIsPlaying     = useDashboardStore(s => s.setIsPlaying);
   const setPlaybackSpeed = useDashboardStore(s => s.setPlaybackSpeed);
-  const setFrameIndex = useDashboardStore(s => s.setFrameIndex);
+  const setFrameIndex    = useDashboardStore(s => s.setFrameIndex);
+  const setRaceTime      = useDashboardStore(s => s.setRaceTimeSeconds);
 
   // Direct DOM update — no re-renders during playback
   useEffect(() => {
     const unsub = useDashboardStore.subscribe(
-      s => s.frameIndex,
-      (fi) => {
-        const pct = totalFrames > 0 ? (fi / (totalFrames - 1)) * 100 : 0;
-        if (fillRef.current) fillRef.current.style.width = `${pct.toFixed(2)}%`;
-        if (timeRef.current && lapTimeMs > 0) {
-          const elapsedMs = (fi / (totalFrames - 1)) * lapTimeMs;
-          timeRef.current.textContent = formatTime(elapsedMs);
+      s => raceMode ? s.raceTimeSeconds : s.frameIndex,
+      (val) => {
+        if (raceMode) {
+          const pct = totalRaceTime > 0 ? ((val as number) / totalRaceTime) * 100 : 0;
+          if (fillRef.current) fillRef.current.style.width = `${pct.toFixed(2)}%`;
+          if (timeRef.current) timeRef.current.textContent = formatRaceTime(val as number);
+        } else {
+          const fi = val as number;
+          const pct = totalFrames > 0 ? (fi / (totalFrames - 1)) * 100 : 0;
+          if (fillRef.current) fillRef.current.style.width = `${pct.toFixed(2)}%`;
+          if (timeRef.current && lapTimeMs > 0) {
+            const elapsedMs = (fi / (totalFrames - 1)) * lapTimeMs;
+            timeRef.current.textContent = formatLapTime(elapsedMs);
+          }
         }
       }
     );
     return unsub;
-  }, [totalFrames, lapTimeMs]);
-
-  const handleScrub = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!trackRef.current || totalFrames === 0) return;
-    const rect = trackRef.current.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    setFrameIndex(ratio * (totalFrames - 1));
-  }, [totalFrames, setFrameIndex]);
+  }, [raceMode, totalFrames, lapTimeMs, totalRaceTime]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    handleScrub(e);
-    const onMove = (ev: MouseEvent) => {
-      if (!trackRef.current || totalFrames === 0) return;
+    const scrub = (ev: MouseEvent | React.MouseEvent) => {
+      if (!trackRef.current) return;
       const rect = trackRef.current.getBoundingClientRect();
       const ratio = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
-      setFrameIndex(ratio * (totalFrames - 1));
+      if (raceMode) setRaceTime(ratio * totalRaceTime);
+      else          setFrameIndex(ratio * (totalFrames - 1));
     };
+    scrub(e);
+    const onMove = (ev: MouseEvent) => scrub(ev);
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-  }, [handleScrub, totalFrames, setFrameIndex]);
+  }, [raceMode, totalFrames, totalRaceTime, setFrameIndex, setRaceTime]);
 
-  const SPEEDS = [0.25, 0.5, 1, 2, 4];
+  const SPEEDS = raceMode ? RACE_SPEEDS : LAP_SPEEDS;
 
   return (
     <div className={styles.root}>
@@ -75,8 +90,11 @@ export function TimelineScrubber({ totalFrames, lapTimeMs }: TimelineScrubberPro
         <button
           className={styles.playBtn}
           onClick={() => {
-            if (useDashboardStore.getState().frameIndex >= totalFrames - 1) {
-              setFrameIndex(0);
+            const store = useDashboardStore.getState();
+            if (raceMode) {
+              if (store.raceTimeSeconds >= totalRaceTime) setRaceTime(0);
+            } else {
+              if (store.frameIndex >= totalFrames - 1) setFrameIndex(0);
             }
             setIsPlaying(!isPlaying);
           }}
@@ -120,7 +138,9 @@ export function TimelineScrubber({ totalFrames, lapTimeMs }: TimelineScrubberPro
       </div>
 
       {/* Time display */}
-      <span ref={timeRef} className={styles.time}>0:00.000</span>
+      <span ref={timeRef} className={styles.time}>
+        {raceMode ? '0:00:00' : '0:00.000'}
+      </span>
     </div>
   );
 }

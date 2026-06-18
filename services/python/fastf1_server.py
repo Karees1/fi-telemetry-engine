@@ -7,8 +7,6 @@ Listens on http://localhost:5000
 import os
 import json
 import time
-import queue
-import threading
 import numpy as np
 import pandas as pd
 import fastf1
@@ -21,19 +19,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 fastf1.Cache.enable_cache(CACHE_DIR)
 
 app = Flask(__name__)
-CORS(app)
-
-# ── Startup cache warm-up ─────────────────────────────────────────────────────
-# Pre-fetch the 2024 + 2023 event schedules in the background so they're cached
-# before the first user request arrives. Failures are silently ignored.
-def _warm_cache():
-    for yr in (2024, 2023):
-        try:
-            fastf1.get_event_schedule(yr, include_testing=False)
-        except Exception:
-            pass
-
-threading.Thread(target=_warm_cache, daemon=True).start()
+CORS(app)  # Next.js dev server is on a different port
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -111,36 +97,6 @@ def load_session():
     if not year or not round_n:
         return Response(sse_error("Missing year or round"), mimetype="text/event-stream", status=400)
 
-    def _run_in_thread(fn):
-        """Run fn() in a background thread; yield keep-alive SSE comments
-        every 15 s while waiting. Yields (status, value) tuple when done."""
-        result_q = queue.Queue()
-        def _worker():
-            try:
-                result_q.put(("ok", fn()))
-            except Exception as exc:
-                result_q.put(("err", str(exc)))
-        threading.Thread(target=_worker, daemon=True).start()
-        while True:
-            try:
-                status, value = result_q.get(timeout=15)
-                yield (status, value)   # yield result — callers check isinstance(chunk, tuple)
-                return
-            except queue.Empty:
-                yield ": keep-alive\n\n"
-
-    def _get_session(yr, rnd, stype, retries=3):
-        """get_session() with exponential-backoff retry for network failures."""
-        last_exc = None
-        for attempt in range(retries):
-            try:
-                return fastf1.get_session(yr, rnd, stype)
-            except Exception as exc:
-                last_exc = exc
-                if attempt < retries - 1:
-                    time.sleep(2 ** attempt)  # 1 s, 2 s
-        raise last_exc
-
     def stream():
         # ── 1. Connecting ──────────────────────────────────────────────────
         yield sse_event("connecting", {
@@ -148,34 +104,21 @@ def load_session():
             "year": year, "round": round_n, "session": s_type,
         })
 
-        # ── 2. Resolve session (downloads schedule if not cached) ──────────
-        # Wrap in thread so keep-alives fire during retries / slow downloads.
-        session = None
-        for chunk in _run_in_thread(lambda: _get_session(year, round_n, s_type)):
-            if isinstance(chunk, tuple):
-                status, value = chunk
-                if status == "err":
-                    yield sse_error(f"Could not resolve session: {value}")
-                    return
-                session = value
-            else:
-                yield chunk  # keep-alive
-
-        # ── 3. Load metadata + laps in background; ping while waiting ──────
-        status = None
-        for chunk in _run_in_thread(
-            lambda: session.load(laps=True, telemetry=False, weather=False, messages=False)
-        ):
-            if isinstance(chunk, tuple):
-                status, err = chunk
-            else:
-                yield chunk  # keep-alive
-
-        if status == "err":
-            yield sse_error(f"Session load failed: {err}")
+        try:
+            session = fastf1.get_session(year, round_n, s_type)
+        except Exception as e:
+            yield sse_error(f"Could not resolve session: {e}")
             return
 
-        # ── 3. Emit session_meta ───────────────────────────────────────────
+        # ── 2. Load metadata + laps (no full telemetry yet) ────────────────
+        try:
+            # laps=True is fast; telemetry=False skips the heavy download
+            session.load(laps=True, telemetry=False, weather=False, messages=False)
+        except Exception as e:
+            yield sse_error(f"Session load failed: {e}")
+            return
+
+        # Build driver list from session results
         driver_rows = []
         try:
             for _, row in session.results.iterrows():
@@ -187,7 +130,7 @@ def load_session():
                     "position":  int(row.get("Position", 0)) if row.get("Position") else None,
                 })
         except Exception:
-            pass
+            pass  # results may be empty for practice sessions
 
         session_id = f"{year}_{round_n}_{s_type}"
         yield sse_event("session_meta", {
@@ -200,7 +143,7 @@ def load_session():
             "drivers":   driver_rows,
         })
 
-        # ── 4. Lap times ───────────────────────────────────────────────────
+        # ── 3. Lap times ───────────────────────────────────────────────────
         laps_payload = []
         try:
             for _, lap in session.laps.iterrows():
@@ -219,27 +162,20 @@ def load_session():
 
         yield sse_event("lap_times", {"laps": laps_payload})
 
-        # ── 6. Reload with full telemetry in background; ping while waiting ─
-        status = None
-        for chunk in _run_in_thread(
-            lambda: session.load(laps=True, telemetry=True, weather=False, messages=False)
-        ):
-            if isinstance(chunk, tuple):
-                status, err = chunk
-            else:
-                yield chunk
-
-        if status == "err":
-            yield sse_error(f"Telemetry load failed: {err}")
+        # ── 4. Reload with full telemetry ──────────────────────────────────
+        try:
+            session.load(laps=True, telemetry=True, weather=False, messages=False)
+        except Exception as e:
+            yield sse_error(f"Telemetry load failed: {e}")
             return
 
-        # ── 6. Track layout ────────────────────────────────────────────────
+        # ── 5. Track layout (from fastest lap of any driver) ───────────────
         try:
             fastest = session.laps.pick_fastest()
             tel = fastest.get_telemetry()
-            x    = normalise(tel["X"].values)
-            y    = normalise(tel["Y"].values)
-            z    = normalise(tel["Z"].values) if "Z" in tel.columns else [0.0] * len(x)
+            x = normalise(tel["X"].values)
+            y = normalise(tel["Y"].values)
+            z = normalise(tel["Z"].values) if "Z" in tel.columns else [0.0] * len(x)
             dist = normalise(tel["Distance"].values)
             yield sse_event("track_layout", {
                 "x": x, "y": y, "z": z,
@@ -253,9 +189,11 @@ def load_session():
         except Exception as e:
             yield sse_event("warning", {"message": f"Track layout unavailable: {e}"})
 
-        # ── 7. Per-driver telemetry ────────────────────────────────────────
+        # ── 6. Per-driver telemetry ────────────────────────────────────────
+        # Resolve which drivers to stream
         requested = [d.strip().upper() for d in drivers.split(",") if d.strip()] if drivers else []
         if not requested:
+            # Default: top-5 fastest drivers
             try:
                 top = session.laps.groupby("Driver")["LapTime"].min().nsmallest(5).index.tolist()
                 requested = top
@@ -287,7 +225,7 @@ def load_session():
             except Exception as e:
                 yield sse_event("warning", {"message": f"Telemetry unavailable for {driver_code}: {e}"})
 
-        # ── 8. Done ────────────────────────────────────────────────────────
+        # ── 7. Done ────────────────────────────────────────────────────────
         yield sse_event("complete", {"sessionId": session_id})
 
     return Response(
@@ -359,6 +297,193 @@ def get_lap_telemetry():
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
+@app.route("/api/race/positions")
+def get_race_positions():
+    """
+    GET /api/race/positions?year=2024&round=6&session=R
+
+    SSE stream:
+      connecting  → { message }
+      race_start  → { sessionId, drivers, bounds, totalTime }
+      driver_pos  → { code, t, x, y, status }   (one per driver, resampled at 1 Hz)
+      complete    → {}
+    """
+    year    = request.args.get("year",    type=int)
+    round_n = request.args.get("round",   type=int)
+    s_type  = request.args.get("session", default="R")
+
+    if not year or not round_n:
+        return jsonify({"status": "error", "error": "Missing year or round"}), 400
+
+    TEAM_COLORS = {
+        'Red Bull Racing': '#3671C6',
+        'Ferrari':         '#E8002D',
+        'Mercedes':        '#27F4D2',
+        'McLaren':         '#FF8000',
+        'Aston Martin':    '#229971',
+        'Alpine':          '#FF87BC',
+        'Williams':        '#64C4FF',
+        'RB':              '#6692FF',
+        'Haas F1 Team':    '#B6BABD',
+        'Kick Sauber':     '#52E252',
+    }
+
+    def stream():
+        yield sse_event("connecting", {"message": "Loading race session…"})
+
+        try:
+            session = fastf1.get_session(year, round_n, s_type)
+            session.load(laps=True, telemetry=True, weather=False, messages=False)
+        except Exception as e:
+            yield sse_error(f"Session load failed: {e}")
+            return
+
+        session_id = f"{year}_{round_n:02d}_{s_type}"
+
+        # ── Bounds from fastest lap ────────────────────────────────────────────
+        try:
+            sample_lap = session.laps.pick_fastest()
+            tel_sample = sample_lap.get_telemetry()
+            bounds = {
+                "minX": float(tel_sample["X"].min()),
+                "maxX": float(tel_sample["X"].max()),
+                "minY": float(tel_sample["Y"].min()),
+                "maxY": float(tel_sample["Y"].max()),
+            }
+        except Exception as e:
+            yield sse_error(f"Failed to get track bounds: {e}")
+            return
+
+        # ── Total race duration (seconds) ──────────────────────────────────────
+        total_time = 5400.0  # fallback 90 min
+        try:
+            # Use session end time from results or last lap finish
+            if not session.results.empty and "Time" in session.results.columns:
+                winner_time = session.results.iloc[0]["Time"]
+                if pd.notna(winner_time):
+                    total_time = float(winner_time.total_seconds())
+        except Exception:
+            pass
+
+        # ── Driver metadata ────────────────────────────────────────────────────
+        driver_info = []
+        driver_codes = []
+        try:
+            driver_codes = sorted(session.laps["Driver"].dropna().unique().tolist())
+        except Exception:
+            pass
+
+        for code in driver_codes:
+            color = "#00D9FF"
+            team  = "Unknown"
+            full_name = code
+            number = 0
+            position = None
+            try:
+                if not session.results.empty:
+                    row = session.results[session.results["Abbreviation"] == code]
+                    if not row.empty:
+                        r = row.iloc[0]
+                        team      = str(r.get("TeamName", "") or "")
+                        color     = TEAM_COLORS.get(team, "#00D9FF")
+                        full_name = str(r.get("FullName", code) or code)
+                        num_val   = r.get("DriverNumber")
+                        number    = int(num_val) if num_val is not None and not pd.isna(num_val) else 0
+                        pos_val   = r.get("Position")
+                        position  = int(pos_val) if pos_val is not None and not pd.isna(pos_val) else None
+            except Exception:
+                pass
+            driver_info.append({
+                "code":     code,
+                "fullName": full_name,
+                "team":     team,
+                "number":   number,
+                "color":    color,
+                "position": position,
+            })
+
+        yield sse_event("race_start", {
+            "sessionId": session_id,
+            "drivers":   driver_info,
+            "bounds":    bounds,
+            "totalTime": total_time,
+        })
+
+        # ── Per-driver position stream (resampled at 1 Hz) ─────────────────────
+        for code in driver_codes:
+            try:
+                drv_laps = session.laps.pick_driver(code)
+                tels = []
+                for _, lap in drv_laps.iterlaps():
+                    try:
+                        lt = lap.get_telemetry()
+                        if not lt.empty:
+                            tels.append(lt[["SessionTime", "X", "Y", "Status"]]
+                                        if "Status" in lt.columns
+                                        else lt[["SessionTime", "X", "Y"]].assign(Status="OnTrack"))
+                    except Exception:
+                        continue
+
+                if not tels:
+                    continue
+
+                full_tel = pd.concat(tels, ignore_index=True).sort_values("SessionTime")
+                t_raw = full_tel["SessionTime"].dt.total_seconds().values.astype(float)
+                x_raw = full_tel["X"].values.astype(float)
+                y_raw = full_tel["Y"].values.astype(float)
+                status_raw = full_tel["Status"].fillna("OnTrack").values.tolist()
+
+                # Remove duplicates and sort
+                mask = np.diff(t_raw, prepend=t_raw[0] - 1) > 0
+                t_raw = t_raw[mask]
+                x_raw = x_raw[mask]
+                y_raw = y_raw[mask]
+                status_raw = [status_raw[i] for i in range(len(status_raw)) if mask[i]]
+
+                if len(t_raw) < 2:
+                    continue
+
+                # Resample at 1 Hz
+                t_out = np.arange(t_raw[0], t_raw[-1], 1.0)
+                x_out = np.interp(t_out, t_raw, x_raw)
+                y_out = np.interp(t_out, t_raw, y_raw)
+
+                # Nearest-neighbour status
+                idx_arr = np.searchsorted(t_raw, t_out).clip(0, len(status_raw) - 1)
+                status_out = [str(status_raw[int(i)]) for i in idx_arr]
+
+                # Expand bounds to include pit-lane excursions
+                bx_min = float(min(bounds["minX"], x_out.min()))
+                bx_max = float(max(bounds["maxX"], x_out.max()))
+                by_min = float(min(bounds["minY"], y_out.min()))
+                by_max = float(max(bounds["maxY"], y_out.max()))
+                bounds["minX"] = bx_min; bounds["maxX"] = bx_max
+                bounds["minY"] = by_min; bounds["maxY"] = by_max
+
+                yield sse_event("driver_pos", {
+                    "code":   code,
+                    "t":      normalise(t_out),
+                    "x":      normalise(x_out),
+                    "y":      normalise(y_out),
+                    "status": status_out,
+                })
+                time.sleep(0.02)
+            except Exception as e:
+                yield sse_event("warning", {"message": f"Position data unavailable for {code}: {e}"})
+
+        yield sse_event("complete", {})
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control":     "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection":        "keep-alive",
+        },
+    )
+
+
 def _sessions_from_event(row) -> list:
     """
     Derive session pills from FastF1 event schedule row.
@@ -414,6 +539,5 @@ def get_races():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    print(f"F1 Telemetry Python service starting on http://0.0.0.0:{port}")
-    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
+    print("🏎  F1 Telemetry Python service starting on http://localhost:5000")
+    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
