@@ -10,10 +10,12 @@ import os
 import queue
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 
 import fastf1
 import numpy as np
 import pandas as pd
+import requests as _http
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
@@ -150,11 +152,189 @@ _TEAM_COLORS: dict[str, str] = {
 }
 
 
+# ── OpenF1 direct-API helpers ──────────────────────────────────────────────────
+# Used as a fallback when FastF1's session.load() silently fails.
+# OpenF1 is a public REST API that doesn't require the complex multi-file
+# download chain that FastF1 uses internally.
+
+_OF1_BASE = "https://api.openf1.org/v1"
+_OF1_SESSION_NAMES = {
+    "R": "Race", "Q": "Qualifying",
+    "FP1": "Practice 1", "FP2": "Practice 2", "FP3": "Practice 3",
+    "S": "Sprint", "SQ": "Sprint Qualifying",
+}
+
+
+def _of1(path, params=None, timeout=20):
+    res = _http.get(f"{_OF1_BASE}{path}", params=params or {}, timeout=timeout)
+    res.raise_for_status()
+    return res.json()
+
+
+def _of1_session_key(year, round_n, s_type):
+    """Find OpenF1 session_key + session info for a race round."""
+    sname = _OF1_SESSION_NAMES.get(s_type, "Race")
+    sessions = _of1("/sessions", {"year": year, "session_name": sname})
+    sessions = sorted(sessions, key=lambda s: s.get("date_start", ""))
+    if not sessions:
+        raise ValueError(f"OpenF1: no '{sname}' sessions for {year}")
+    if round_n < 1 or round_n > len(sessions):
+        raise ValueError(
+            f"OpenF1: round {round_n} not found "
+            f"({len(sessions)} '{sname}' sessions in {year})"
+        )
+    sess = sessions[round_n - 1]
+    return sess["session_key"], sess
+
+
+def _of1_build_laps(session_key, sess_info):
+    """
+    Fetch laps + drivers + stints from OpenF1 and return:
+      (laps_payload, drivers_list, raw_drivers)
+    where laps_payload matches our LapRow wire format.
+    """
+    laps_raw    = _of1("/laps",    {"session_key": session_key}, timeout=30)
+    drivers_raw = _of1("/drivers", {"session_key": session_key})
+    stints_raw  = _of1("/stints",  {"session_key": session_key})
+
+    num_to_code = {d["driver_number"]: d.get("name_acronym", "???") for d in drivers_raw}
+
+    # (driver_number, lap_number) → compound
+    compound_map = {}
+    for st in stints_raw:
+        dnum = st.get("driver_number")
+        comp = (st.get("compound") or "UNKNOWN").upper()
+        for ln in range(st.get("lap_start", 0), st.get("lap_end", 0) + 1):
+            compound_map[(dnum, ln)] = comp
+
+    # Session start datetime for computing ms offsets
+    sess_start_dt = None
+    try:
+        sess_start_dt = datetime.fromisoformat(
+            sess_info.get("date_start", "").replace("Z", "+00:00")
+        )
+    except Exception:
+        pass
+
+    laps_payload = []
+    for lap in laps_raw:
+        dnum    = lap.get("driver_number")
+        code    = num_to_code.get(dnum, str(dnum))
+        lap_num = lap.get("lap_number", 0)
+        dur_s   = lap.get("lap_duration")
+        start_s = lap.get("date_start")
+
+        lap_ms   = int(dur_s * 1000)    if dur_s    else None
+        start_ms = None
+        if start_s and sess_start_dt:
+            try:
+                start_dt = datetime.fromisoformat(start_s.replace("Z", "+00:00"))
+                start_ms = int((start_dt - sess_start_dt).total_seconds() * 1000)
+            except Exception:
+                pass
+
+        s1 = lap.get("duration_sector_1")
+        s2 = lap.get("duration_sector_2")
+        s3 = lap.get("duration_sector_3")
+
+        laps_payload.append({
+            "driver":         code,
+            "lapNumber":      lap_num,
+            "lapTime":        lap_ms,
+            "sector1":        int(s1 * 1000) if s1 else None,
+            "sector2":        int(s2 * 1000) if s2 else None,
+            "sector3":        int(s3 * 1000) if s3 else None,
+            "compound":       compound_map.get((dnum, lap_num), "UNKNOWN"),
+            "isPersonalBest": False,
+            "position":       None,
+            "pitInTime":      None,
+            "pitOutTime":     None,
+            "lapStartTime":   start_ms,
+            # Internal only — used by track layout lookup, NOT sent to client
+            "_dnum": dnum,
+        })
+
+    drivers_list = [
+        {
+            "code":     d.get("name_acronym", "???"),
+            "fullName": f"{d.get('first_name','')} {d.get('last_name','')}".strip(),
+            "team":     d.get("team_name", ""),
+            "number":   d.get("driver_number", 0),
+            "position": None,
+        }
+        for d in drivers_raw
+    ]
+
+    return laps_payload, drivers_list, drivers_raw
+
+
+def _of1_track_layout(session_key, sess_info, laps_payload):
+    """
+    Build track layout from OpenF1 location data for the fastest lap.
+    Queries only that lap's time window to avoid downloading the full-race
+    location dataset (which would be 5–15 MB).
+    """
+    sess_start_dt = datetime.fromisoformat(
+        sess_info.get("date_start", "").replace("Z", "+00:00")
+    )
+
+    # Find the fastest valid lap (skip first 3 laps — safety car / formation)
+    candidates = [
+        (l["lapTime"], l["lapStartTime"], l.get("_dnum"))
+        for l in laps_payload
+        if l["lapTime"] and l["lapStartTime"] and l.get("lapNumber", 0) > 3
+           and l.get("_dnum") is not None
+    ]
+    if not candidates:
+        raise ValueError("No valid laps for OpenF1 track layout")
+    candidates.sort()
+    fastest_ms, start_ms, dnum = candidates[0]
+
+    lap_start_dt = sess_start_dt + timedelta(milliseconds=start_ms)
+    lap_end_dt   = lap_start_dt + timedelta(milliseconds=fastest_ms)
+
+    locs = _of1("/location", {
+        "session_key":   session_key,
+        "driver_number": dnum,
+        "date_gt": lap_start_dt.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        "date_lt": lap_end_dt.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+    }, timeout=20)
+
+    xs = [l["x"] for l in locs if l.get("x") is not None]
+    ys = [l["y"] for l in locs if l.get("y") is not None]
+
+    if len(xs) < 50:
+        raise ValueError(f"Too few OpenF1 location points ({len(xs)})")
+
+    return {
+        "x": xs, "y": ys, "z": [0.0] * len(xs),
+        "distance": list(range(len(xs))),
+        "bounds": {
+            "minX": float(min(xs)), "maxX": float(max(xs)),
+            "minY": float(min(ys)), "maxY": float(max(ys)),
+        },
+        "length": float(len(xs)),
+    }
+
+
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
 @app.route("/health")
 def health():
     return jsonify({"status": "ok", "timestamp": int(time.time() * 1000)})
+
+
+@app.route("/api/version")
+def version():
+    """Returns installed package versions — useful for debugging Render environment."""
+    import sys
+    return jsonify({
+        "python":  sys.version,
+        "fastf1":  fastf1.__version__,
+        "pandas":  pd.__version__,
+        "numpy":   np.__version__,
+        "status":  "ok",
+    })
 
 
 @app.route("/api/session/load")
@@ -219,91 +399,112 @@ def load_session():
             yield sse_error(f"Session load failed: {err}")
             return
 
-        # Verify laps are actually populated — FastF1 can silently fail to load
-        # laps (e.g. OpenF1 API returns empty/unexpected data for newer seasons).
-        # On failure, retry once with force=True to bypass any cached empty state.
+        # Verify laps are actually populated.
+        # FastF1 can silently fail to load laps (network error, API format change,
+        # version mismatch) leaving session._laps = None → NotLoadedError.
+        # If that happens, fall through to the OpenF1 direct-API path below.
+        _using_openf1_laps = False
+        _of1_session_key_val = None
+        _of1_sess_info = None
+        of1_laps: list = []
+        of1_drivers: list = []
+
         try:
             lap_count = len(session.laps)
-        except Exception:
-            # First attempt failed — retry with force=True
-            retry_status = None
-            for chunk in _run_in_thread(
-                lambda: session.load(laps=True, telemetry=False, weather=False, messages=False, force=True),
-                max_wait=60,
-            ):
-                if isinstance(chunk, tuple):
-                    retry_status, _ = chunk
-                else:
-                    yield chunk
+        except Exception as ff1_err:
+            yield sse_event("warning", {
+                "message": (
+                    f"FastF1 silent load failure ({ff1_err}). "
+                    "Switching to OpenF1 direct API…"
+                )
+            })
 
+            # ── OpenF1 fallback: fetch laps + drivers directly ────────────────
             try:
-                lap_count = len(session.laps)
-            except Exception as verify_err:
-                # Both attempts failed — most likely this year's data isn't
-                # available via the OpenF1 API that FastF1 uses for 2024+ seasons.
+                _of1_session_key_val, _of1_sess_info = _of1_session_key(year, round_n, s_type)
+                of1_laps, of1_drivers, _ = _of1_build_laps(_of1_session_key_val, _of1_sess_info)
+                lap_count = len(of1_laps)
+                _using_openf1_laps = True
+            except Exception as of1_err:
                 yield sse_error(
-                    f"No lap data available for {year} round {round_n} ({s_type}). "
-                    f"FastF1 error: {verify_err}. "
-                    f"Try the 2024 season — it has complete, verified data."
+                    f"Both FastF1 and OpenF1 failed for {year} round {round_n} ({s_type}). "
+                    f"FastF1: {ff1_err} | OpenF1: {of1_err}"
                 )
                 return
 
         # ── 4. session_meta ────────────────────────────────────────────────
-        driver_rows = []
-        try:
-            for _, row in session.results.iterrows():
-                driver_rows.append({
-                    "code":      row.get("Abbreviation", "???"),
-                    "fullName":  f"{row.get('FirstName','')} {row.get('LastName','')}".strip(),
-                    "team":      row.get("TeamName", ""),
-                    "number":    int(row.get("DriverNumber", 0)),
-                    "position":  int(row.get("Position", 0)) if row.get("Position") else None,
-                })
-        except Exception:
-            pass  # results may be empty for practice sessions
-
         session_id = f"{year}_{round_n}_{s_type}"
-        yield sse_event("session_meta", {
-            "sessionId": session_id,
-            "name":      session.event.get("EventName", ""),
-            "date":      str(session.event.get("EventDate", "")),
-            "type":      s_type,
-            "circuit":   session.event.get("Location", ""),
-            "country":   session.event.get("Country", ""),
-            "drivers":   driver_rows,
-        })
+
+        if _using_openf1_laps:
+            # OpenF1 path: use of1_drivers for metadata, of1_sess_info for circuit
+            yield sse_event("session_meta", {
+                "sessionId": session_id,
+                "name":      _of1_sess_info.get("meeting_name", f"{year} Round {round_n}"),
+                "date":      (_of1_sess_info.get("date_start") or "")[:10],
+                "type":      s_type,
+                "circuit":   _of1_sess_info.get("circuit_short_name", ""),
+                "country":   _of1_sess_info.get("country_name", ""),
+                "drivers":   of1_drivers,
+            })
+        else:
+            # FastF1 path: use session.results and session.event
+            driver_rows = []
+            try:
+                for _, row in session.results.iterrows():
+                    driver_rows.append({
+                        "code":      row.get("Abbreviation", "???"),
+                        "fullName":  f"{row.get('FirstName','')} {row.get('LastName','')}".strip(),
+                        "team":      row.get("TeamName", ""),
+                        "number":    int(row.get("DriverNumber", 0)),
+                        "position":  int(row.get("Position", 0)) if row.get("Position") else None,
+                    })
+            except Exception:
+                pass
+
+            yield sse_event("session_meta", {
+                "sessionId": session_id,
+                "name":      session.event.get("EventName", ""),
+                "date":      str(session.event.get("EventDate", "")),
+                "type":      s_type,
+                "circuit":   session.event.get("Location", ""),
+                "country":   session.event.get("Country", ""),
+                "drivers":   driver_rows,
+            })
 
         # ── 5. Lap times ───────────────────────────────────────────────────
-        laps_payload = []
-        try:
-            for _, lap in session.laps.iterrows():
-                try:
-                    # Compute lap start time: session time at lap end − lap duration
-                    lap_time_td  = lap.get("LapTime")
-                    lap_end_td   = lap.get("Time")
-                    lap_start_ms = None
-                    if lap_time_td is not None and not pd.isna(lap_time_td) and \
-                       lap_end_td  is not None and not pd.isna(lap_end_td):
-                        lap_start_ms = td_ms(lap_end_td - lap_time_td)
+        if _using_openf1_laps:
+            # Strip internal _dnum field before sending to client
+            laps_payload = [{k: v for k, v in l.items() if k != "_dnum"} for l in of1_laps]
+        else:
+            laps_payload = []
+            try:
+                for _, lap in session.laps.iterrows():
+                    try:
+                        lap_time_td  = lap.get("LapTime")
+                        lap_end_td   = lap.get("Time")
+                        lap_start_ms = None
+                        if lap_time_td is not None and not pd.isna(lap_time_td) and \
+                           lap_end_td  is not None and not pd.isna(lap_end_td):
+                            lap_start_ms = td_ms(lap_end_td - lap_time_td)
 
-                    laps_payload.append({
-                        "driver":         str(lap.get("Driver", "")),
-                        "lapNumber":      safe_int(lap.get("LapNumber"), 0),
-                        "lapTime":        td_ms(lap.get("LapTime")),
-                        "sector1":        td_ms(lap.get("Sector1Time")),
-                        "sector2":        td_ms(lap.get("Sector2Time")),
-                        "sector3":        td_ms(lap.get("Sector3Time")),
-                        "compound":       str(lap.get("Compound", "") or ""),
-                        "isPersonalBest": safe_bool(lap.get("IsPersonalBest", False)),
-                        "position":       safe_int(lap.get("Position"), None),
-                        "pitInTime":      td_ms(lap.get("PitInTime")),
-                        "pitOutTime":     td_ms(lap.get("PitOutTime")),
-                        "lapStartTime":   lap_start_ms,
-                    })
-                except Exception:
-                    pass  # skip individual bad rows
-        except Exception as e:
-            yield sse_event("warning", {"message": f"Lap times partial: {e}"})
+                        laps_payload.append({
+                            "driver":         str(lap.get("Driver", "")),
+                            "lapNumber":      safe_int(lap.get("LapNumber"), 0),
+                            "lapTime":        td_ms(lap.get("LapTime")),
+                            "sector1":        td_ms(lap.get("Sector1Time")),
+                            "sector2":        td_ms(lap.get("Sector2Time")),
+                            "sector3":        td_ms(lap.get("Sector3Time")),
+                            "compound":       str(lap.get("Compound", "") or ""),
+                            "isPersonalBest": safe_bool(lap.get("IsPersonalBest", False)),
+                            "position":       safe_int(lap.get("Position"), None),
+                            "pitInTime":      td_ms(lap.get("PitInTime")),
+                            "pitOutTime":     td_ms(lap.get("PitOutTime")),
+                            "lapStartTime":   lap_start_ms,
+                        })
+                    except Exception:
+                        pass
+            except Exception as e:
+                yield sse_event("warning", {"message": f"Lap times partial: {e}"})
 
         yield sse_event("lap_times", {"laps": laps_payload})
 
@@ -425,7 +626,18 @@ def load_session():
                 except Exception as e3:
                     yield sse_event("warning", {"message": f"Track Tier 3 failed: {e3}"})
             if not track_sent:
-                yield sse_event("warning", {"message": f"Track layout unavailable: {first_error}"})
+                # Tier 4 — OpenF1 location data (one lap's GPS positions)
+                if _of1_session_key_val and _of1_sess_info:
+                    try:
+                        of1_track = _of1_track_layout(
+                            _of1_session_key_val, _of1_sess_info, of1_laps
+                        )
+                        yield sse_event("track_layout", of1_track)
+                        track_sent = True
+                    except Exception as e4:
+                        yield sse_event("warning", {"message": f"Track Tier 4 (OpenF1) failed: {e4}"})
+                if not track_sent:
+                    yield sse_event("warning", {"message": f"Track layout unavailable: {first_error}"})
 
         # ── 7. Per-driver telemetry ────────────────────────────────────────
         # Only download if the client explicitly requests driver codes.
