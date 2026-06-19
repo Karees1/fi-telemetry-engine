@@ -8,9 +8,14 @@ import gc
 import json
 import os
 import queue
+import sys
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+
+# OpenF1 JSON responses for a full race can be 1000+ records; Python's default
+# 1000-frame recursion limit can be hit by the pure-Python JSON fallback decoder.
+sys.setrecursionlimit(10000)
 
 import fastf1
 import numpy as np
@@ -172,12 +177,23 @@ def _of1(path, params=None, timeout=20):
 
 
 def _of1_session_key(year, round_n, s_type):
-    """Find OpenF1 session_key + session info for a race round."""
+    """Find OpenF1 session_key + session info for a race round.
+    Uses round_number field from OpenF1 for exact match, avoiding index drift
+    from pre-season tests or sprint weekends.
+    """
     sname = _OF1_SESSION_NAMES.get(s_type, "Race")
     sessions = _of1("/sessions", {"year": year, "session_name": sname})
-    sessions = sorted(sessions, key=lambda s: s.get("date_start", ""))
     if not sessions:
         raise ValueError(f"OpenF1: no '{sname}' sessions for {year}")
+
+    # Prefer exact round_number match
+    by_round = [s for s in sessions if s.get("round_number") == round_n]
+    if by_round:
+        sess = by_round[0]
+        return sess["session_key"], sess
+
+    # Fallback: sort by date and index (handles years where round_number is absent)
+    sessions = sorted(sessions, key=lambda s: s.get("date_start", ""))
     if round_n < 1 or round_n > len(sessions):
         raise ValueError(
             f"OpenF1: round {round_n} not found "
@@ -429,21 +445,21 @@ def load_session():
                 return sk, si, laps, drvs
 
             _of1_result = None
+            _of1_err = "unknown error"
             for chunk in _run_in_thread(_of1_load_all, max_wait=60):
                 if isinstance(chunk, tuple):
                     _status, _value = chunk
                     if _status == "ok":
                         _of1_result = _value
-                    # if "err", result stays None — handled below
+                    else:
+                        _of1_err = str(_value)
                 else:
                     yield chunk  # keep-alive
 
             if _of1_result is None:
-                # _of1_load_all raised — get a fresh error if we can
                 yield sse_error(
                     f"Both FastF1 and OpenF1 failed for {year} round {round_n} ({s_type}). "
-                    f"FastF1 error: {ff1_err}. "
-                    "Verify the Render service is running and can reach api.openf1.org."
+                    f"FastF1: {ff1_err} | OpenF1: {_of1_err}"
                 )
                 return
 
