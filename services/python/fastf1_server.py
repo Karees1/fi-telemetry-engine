@@ -4,12 +4,16 @@ Run: python services/python/fastf1_server.py
 Listens on http://localhost:5000
 """
 
-import os
+import gc
 import json
+import os
+import queue
+import threading
 import time
+
+import fastf1
 import numpy as np
 import pandas as pd
-import fastf1
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
@@ -19,13 +23,24 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 fastf1.Cache.enable_cache(CACHE_DIR)
 
 app = Flask(__name__)
-CORS(app)  # Next.js dev server is on a different port
+CORS(app)
+
+# ── Startup cache warm-up ─────────────────────────────────────────────────────
+# Pre-fetch the 2024 + 2023 + 2025 event schedules in the background so they're
+# cached before the first user request. Failures are silently ignored.
+def _warm_cache():
+    for yr in (2025, 2024, 2023):
+        try:
+            fastf1.get_event_schedule(yr, include_testing=False)
+        except Exception:
+            pass
+
+threading.Thread(target=_warm_cache, daemon=True).start()
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def sse_event(event: str, data: dict) -> str:
-    """Format a single SSE message."""
     payload = json.dumps(data, default=str)
     return f"event: {event}\ndata: {payload}\n\n"
 
@@ -61,6 +76,55 @@ def safe_bool(val):
     return bool(val)
 
 
+def _run_in_thread(fn):
+    """Run fn() in a background thread; yield keep-alive SSE comments every
+    15 s while waiting. Yields a (status, value) tuple when done."""
+    result_q = queue.Queue()
+
+    def _worker():
+        try:
+            result_q.put(("ok", fn()))
+        except Exception as exc:
+            result_q.put(("err", str(exc)))
+
+    threading.Thread(target=_worker, daemon=True).start()
+    while True:
+        try:
+            status, value = result_q.get(timeout=15)
+            yield (status, value)
+            return
+        except queue.Empty:
+            yield ": keep-alive\n\n"
+
+
+def _get_session(yr, rnd, stype, retries=3):
+    """fastf1.get_session() with exponential-backoff retry for network failures."""
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            return fastf1.get_session(yr, rnd, stype)
+        except Exception as exc:
+            last_exc = exc
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)  # 1 s, 2 s
+    raise last_exc
+
+
+# ── Team colours (2024/2025 grid) ─────────────────────────────────────────────
+_TEAM_COLORS: dict[str, str] = {
+    'Red Bull Racing': '#3671C6',
+    'Ferrari':         '#E8002D',
+    'Mercedes':        '#27F4D2',
+    'McLaren':         '#FF8000',
+    'Aston Martin':    '#229971',
+    'Alpine':          '#FF87BC',
+    'Williams':        '#64C4FF',
+    'RB':              '#6692FF',
+    'Haas F1 Team':    '#B6BABD',
+    'Kick Sauber':     '#52E252',
+}
+
+
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
 @app.route("/health")
@@ -85,7 +149,7 @@ def load_session():
         session_meta    { sessionId, name, date, type, drivers[] }
         lap_times       { laps: [{ driver, lapNumber, lapTime, compound, … }] }
         track_layout    { x[], y[], z[], bounds }
-        telemetry       { driver, points: [{ distance, speed, throttle, brake, gear, drs }] }
+        telemetry       { driver, points: { distance, speed, throttle, brake, gear, drs, x, y, z } }
             (one event per driver requested)
         complete        { sessionId }
     """
@@ -104,21 +168,33 @@ def load_session():
             "year": year, "round": round_n, "session": s_type,
         })
 
-        try:
-            session = fastf1.get_session(year, round_n, s_type)
-        except Exception as e:
-            yield sse_error(f"Could not resolve session: {e}")
+        # ── 2. Resolve session (downloads schedule if not cached) ──────────
+        session = None
+        for chunk in _run_in_thread(lambda: _get_session(year, round_n, s_type)):
+            if isinstance(chunk, tuple):
+                status, value = chunk
+                if status == "err":
+                    yield sse_error(f"Could not resolve session: {value}")
+                    return
+                session = value
+            else:
+                yield chunk  # keep-alive
+
+        # ── 3. Load metadata + laps (no full telemetry yet) ────────────────
+        status = None
+        for chunk in _run_in_thread(
+            lambda: session.load(laps=True, telemetry=False, weather=False, messages=False)
+        ):
+            if isinstance(chunk, tuple):
+                status, err = chunk
+            else:
+                yield chunk  # keep-alive
+
+        if status == "err":
+            yield sse_error(f"Session load failed: {err}")
             return
 
-        # ── 2. Load metadata + laps (no full telemetry yet) ────────────────
-        try:
-            # laps=True is fast; telemetry=False skips the heavy download
-            session.load(laps=True, telemetry=False, weather=False, messages=False)
-        except Exception as e:
-            yield sse_error(f"Session load failed: {e}")
-            return
-
-        # Build driver list from session results
+        # ── 4. session_meta ────────────────────────────────────────────────
         driver_rows = []
         try:
             for _, row in session.results.iterrows():
@@ -143,7 +219,7 @@ def load_session():
             "drivers":   driver_rows,
         })
 
-        # ── 3. Lap times ───────────────────────────────────────────────────
+        # ── 5. Lap times ───────────────────────────────────────────────────
         laps_payload = []
         try:
             for _, lap in session.laps.iterrows():
@@ -162,20 +238,29 @@ def load_session():
 
         yield sse_event("lap_times", {"laps": laps_payload})
 
-        # ── 4. Reload with full telemetry ──────────────────────────────────
-        try:
-            session.load(laps=True, telemetry=True, weather=False, messages=False)
-        except Exception as e:
-            yield sse_error(f"Telemetry load failed: {e}")
+        # ── 6. Reload with full telemetry ──────────────────────────────────
+        status = None
+        for chunk in _run_in_thread(
+            lambda: session.load(laps=True, telemetry=True, weather=False, messages=False)
+        ):
+            if isinstance(chunk, tuple):
+                status, err = chunk
+            else:
+                yield chunk  # keep-alive
+
+        if status == "err":
+            yield sse_error(f"Telemetry load failed: {err}")
             return
 
-        # ── 5. Track layout (from fastest lap of any driver) ───────────────
+        gc.collect()
+
+        # ── 7. Track layout ────────────────────────────────────────────────
         try:
             fastest = session.laps.pick_fastest()
             tel = fastest.get_telemetry()
-            x = normalise(tel["X"].values)
-            y = normalise(tel["Y"].values)
-            z = normalise(tel["Z"].values) if "Z" in tel.columns else [0.0] * len(x)
+            x    = normalise(tel["X"].values)
+            y    = normalise(tel["Y"].values)
+            z    = normalise(tel["Z"].values) if "Z" in tel.columns else [0.0] * len(x)
             dist = normalise(tel["Distance"].values)
             yield sse_event("track_layout", {
                 "x": x, "y": y, "z": z,
@@ -189,13 +274,12 @@ def load_session():
         except Exception as e:
             yield sse_event("warning", {"message": f"Track layout unavailable: {e}"})
 
-        # ── 6. Per-driver telemetry ────────────────────────────────────────
-        # Resolve which drivers to stream
+        # ── 8. Per-driver telemetry ────────────────────────────────────────
         requested = [d.strip().upper() for d in drivers.split(",") if d.strip()] if drivers else []
         if not requested:
-            # Default: top-5 fastest drivers
             try:
-                top = session.laps.groupby("Driver")["LapTime"].min().nsmallest(5).index.tolist()
+                # Limit to top 3 by default to keep memory usage manageable on Render
+                top = session.laps.groupby("Driver")["LapTime"].min().nsmallest(3).index.tolist()
                 requested = top
             except Exception:
                 requested = []
@@ -224,8 +308,10 @@ def load_session():
                 })
             except Exception as e:
                 yield sse_event("warning", {"message": f"Telemetry unavailable for {driver_code}: {e}"})
+            finally:
+                gc.collect()
 
-        # ── 7. Done ────────────────────────────────────────────────────────
+        # ── 9. Done ────────────────────────────────────────────────────────
         yield sse_event("complete", {"sessionId": session_id})
 
     return Response(
@@ -233,7 +319,7 @@ def load_session():
         mimetype="text/event-stream",
         headers={
             "Cache-Control":     "no-cache",
-            "X-Accel-Buffering": "no",   # nginx: disable buffering
+            "X-Accel-Buffering": "no",
             "Connection":        "keep-alive",
         },
     )
@@ -245,7 +331,6 @@ def get_lap_telemetry():
     GET /api/session/lap?year=2024&round=22&session=R&driver=NOR&lap=50
 
     Returns telemetry for one driver on one specific lap.
-    The session is loaded from the FastF1 disk cache (instant if already cached).
     Omit 'lap' to get that driver's fastest lap.
     """
     year    = request.args.get("year",    type=int)
@@ -258,7 +343,7 @@ def get_lap_telemetry():
         return jsonify({"status": "error", "error": "Missing year, round, or driver"}), 400
 
     try:
-        session = fastf1.get_session(year, round_n, s_type)
+        session = _get_session(year, round_n, s_type)
         session.load(laps=True, telemetry=True, weather=False, messages=False)
     except Exception as e:
         return jsonify({"status": "error", "error": f"Session load failed: {e}"}), 500
@@ -300,107 +385,129 @@ def get_lap_telemetry():
 @app.route("/api/race/positions")
 def get_race_positions():
     """
-    GET /api/race/positions?year=2024&round=6&session=R
+    SSE stream — full race GPS positions for all cars.
 
-    SSE stream:
-      connecting  → { message }
-      race_start  → { sessionId, drivers, bounds, totalTime }
-      driver_pos  → { code, t, x, y, status }   (one per driver, resampled at 1 Hz)
-      complete    → {}
+    Query params: year, round, session (same as /api/session/load)
+
+    Event sequence:
+        connecting   { message }
+        race_start   { sessionId, drivers[], bounds, totalTime }
+        driver_pos   { code, t[], x[], y[], status[] }   — one per driver
+        complete     { sessionId }
     """
     year    = request.args.get("year",    type=int)
     round_n = request.args.get("round",   type=int)
     s_type  = request.args.get("session", default="R")
 
     if not year or not round_n:
-        return jsonify({"status": "error", "error": "Missing year or round"}), 400
-
-    TEAM_COLORS = {
-        'Red Bull Racing': '#3671C6',
-        'Ferrari':         '#E8002D',
-        'Mercedes':        '#27F4D2',
-        'McLaren':         '#FF8000',
-        'Aston Martin':    '#229971',
-        'Alpine':          '#FF87BC',
-        'Williams':        '#64C4FF',
-        'RB':              '#6692FF',
-        'Haas F1 Team':    '#B6BABD',
-        'Kick Sauber':     '#52E252',
-    }
+        return Response(sse_error("Missing year or round"), mimetype="text/event-stream", status=400)
 
     def stream():
-        yield sse_event("connecting", {"message": "Loading race session…"})
+        yield sse_event("connecting", {"message": "LOADING RACE POSITIONS"})
 
-        try:
-            session = fastf1.get_session(year, round_n, s_type)
-            session.load(laps=True, telemetry=True, weather=False, messages=False)
-        except Exception as e:
-            yield sse_error(f"Session load failed: {e}")
+        # ── 1. Resolve session ────────────────────────────────────────────────
+        session = None
+        for chunk in _run_in_thread(lambda: _get_session(year, round_n, s_type)):
+            if isinstance(chunk, tuple):
+                status, value = chunk
+                if status == "err":
+                    yield sse_error(f"Session load failed: {value}")
+                    return
+                session = value
+            else:
+                yield chunk
+
+        # ── 2. Load telemetry (needed for pos_data) ───────────────────────────
+        status = None
+        for chunk in _run_in_thread(
+            lambda: session.load(laps=True, telemetry=True, weather=False, messages=False)
+        ):
+            if isinstance(chunk, tuple):
+                status, err = chunk
+            else:
+                yield chunk
+
+        if status == "err":
+            yield sse_error(f"Telemetry load failed: {err}")
             return
 
-        session_id = f"{year}_{round_n:02d}_{s_type}"
+        gc.collect()
 
-        # ── Bounds from fastest lap ────────────────────────────────────────────
-        try:
-            sample_lap = session.laps.pick_fastest()
-            tel_sample = sample_lap.get_telemetry()
-            bounds = {
-                "minX": float(tel_sample["X"].min()),
-                "maxX": float(tel_sample["X"].max()),
-                "minY": float(tel_sample["Y"].min()),
-                "maxY": float(tel_sample["Y"].max()),
-            }
-        except Exception as e:
-            yield sse_error(f"Failed to get track bounds: {e}")
-            return
-
-        # ── Total race duration (seconds) ──────────────────────────────────────
-        total_time = 5400.0  # fallback 90 min
-        try:
-            # Use session end time from results or last lap finish
-            if not session.results.empty and "Time" in session.results.columns:
-                winner_time = session.results.iloc[0]["Time"]
-                if pd.notna(winner_time):
-                    total_time = float(winner_time.total_seconds())
-        except Exception:
-            pass
-
-        # ── Driver metadata ────────────────────────────────────────────────────
+        # ── 3. Build driver roster ────────────────────────────────────────────
+        car_num_to_code: dict[str, str] = {}
         driver_info = []
-        driver_codes = []
         try:
-            driver_codes = sorted(session.laps["Driver"].dropna().unique().tolist())
-        except Exception:
-            pass
+            for _, row in session.results.iterrows():
+                code    = str(row.get("Abbreviation", "???"))
+                num_raw = row.get("DriverNumber", 0)
+                num_str = str(int(float(str(num_raw)))) if num_raw else "0"
+                team    = str(row.get("TeamName", ""))
+                pos_val = row.get("Position")
+                car_num_to_code[num_str] = code
+                driver_info.append({
+                    "code":     code,
+                    "fullName": f"{row.get('FirstName','')} {row.get('LastName','')}".strip(),
+                    "team":     team,
+                    "number":   int(float(str(num_raw))) if num_raw else 0,
+                    "color":    _TEAM_COLORS.get(team, "#00D9FF"),
+                    "position": int(pos_val) if pos_val and not pd.isna(pos_val) else None,
+                })
+        except Exception as e:
+            yield sse_event("warning", {"message": f"Driver info partial: {e}"})
 
-        for code in driver_codes:
-            color = "#00D9FF"
-            team  = "Unknown"
-            full_name = code
-            number = 0
-            position = None
-            try:
-                if not session.results.empty:
-                    row = session.results[session.results["Abbreviation"] == code]
-                    if not row.empty:
-                        r = row.iloc[0]
-                        team      = str(r.get("TeamName", "") or "")
-                        color     = TEAM_COLORS.get(team, "#00D9FF")
-                        full_name = str(r.get("FullName", code) or code)
-                        num_val   = r.get("DriverNumber")
-                        number    = int(num_val) if num_val is not None and not pd.isna(num_val) else 0
-                        pos_val   = r.get("Position")
-                        position  = int(pos_val) if pos_val is not None and not pd.isna(pos_val) else None
-            except Exception:
-                pass
-            driver_info.append({
-                "code":     code,
-                "fullName": full_name,
-                "team":     team,
-                "number":   number,
-                "color":    color,
-                "position": position,
-            })
+        # ── 4. Extract position series per car ────────────────────────────────
+        all_x, all_y = [], []
+        total_time   = 0.0
+        driver_positions: dict[str, dict] = {}
+
+        try:
+            for car_key, df in session.pos_data.items():
+                try:
+                    num_str = str(int(float(str(car_key))))
+                except Exception:
+                    num_str = str(car_key)
+                code = car_num_to_code.get(num_str, num_str)
+
+                if df is None or df.empty:
+                    continue
+
+                if "Time" in df.columns:
+                    t_raw = df["Time"].dt.total_seconds().values.astype(float)
+                else:
+                    t_raw = (df["Date"] - df["Date"].iloc[0]).dt.total_seconds().values.astype(float)
+
+                x_raw  = df["X"].values.astype(float)
+                y_raw  = df["Y"].values.astype(float)
+                st_raw = df["Status"].fillna("OnTrack").tolist() if "Status" in df.columns \
+                         else ["OnTrack"] * len(df)
+
+                # Subsample: keep ≤ 8000 points per driver (~1.5 Hz for a 90-min race)
+                step = max(1, len(df) // 8000)
+                t_s  = normalise(t_raw[::step])
+                x_s  = normalise(x_raw[::step])
+                y_s  = normalise(y_raw[::step])
+                st_s = st_raw[::step]
+
+                driver_positions[code] = {"t": t_s, "x": x_s, "y": y_s, "status": st_s}
+                all_x.extend(x_s)
+                all_y.extend(y_s)
+                if t_s:
+                    total_time = max(total_time, float(t_s[-1]))
+
+        except Exception as e:
+            yield sse_event("warning", {"message": f"Position data failed: {e}"})
+            yield sse_event("complete", {"sessionId": f"{year}_{round_n}_{s_type}"})
+            return
+
+        gc.collect()
+
+        bounds = {
+            "minX": float(np.min(all_x)) if all_x else -5000.0,
+            "maxX": float(np.max(all_x)) if all_x else  5000.0,
+            "minY": float(np.min(all_y)) if all_y else -5000.0,
+            "maxY": float(np.max(all_y)) if all_y else  5000.0,
+        }
+        session_id = f"{year}_{round_n}_{s_type}"
 
         yield sse_event("race_start", {
             "sessionId": session_id,
@@ -409,69 +516,11 @@ def get_race_positions():
             "totalTime": total_time,
         })
 
-        # ── Per-driver position stream (resampled at 1 Hz) ─────────────────────
-        for code in driver_codes:
-            try:
-                drv_laps = session.laps.pick_driver(code)
-                tels = []
-                for _, lap in drv_laps.iterlaps():
-                    try:
-                        lt = lap.get_telemetry()
-                        if not lt.empty:
-                            tels.append(lt[["SessionTime", "X", "Y", "Status"]]
-                                        if "Status" in lt.columns
-                                        else lt[["SessionTime", "X", "Y"]].assign(Status="OnTrack"))
-                    except Exception:
-                        continue
+        for code, pos in driver_positions.items():
+            yield sse_event("driver_pos", {"code": code, **pos})
+            gc.collect()
 
-                if not tels:
-                    continue
-
-                full_tel = pd.concat(tels, ignore_index=True).sort_values("SessionTime")
-                t_raw = full_tel["SessionTime"].dt.total_seconds().values.astype(float)
-                x_raw = full_tel["X"].values.astype(float)
-                y_raw = full_tel["Y"].values.astype(float)
-                status_raw = full_tel["Status"].fillna("OnTrack").values.tolist()
-
-                # Remove duplicates and sort
-                mask = np.diff(t_raw, prepend=t_raw[0] - 1) > 0
-                t_raw = t_raw[mask]
-                x_raw = x_raw[mask]
-                y_raw = y_raw[mask]
-                status_raw = [status_raw[i] for i in range(len(status_raw)) if mask[i]]
-
-                if len(t_raw) < 2:
-                    continue
-
-                # Resample at 1 Hz
-                t_out = np.arange(t_raw[0], t_raw[-1], 1.0)
-                x_out = np.interp(t_out, t_raw, x_raw)
-                y_out = np.interp(t_out, t_raw, y_raw)
-
-                # Nearest-neighbour status
-                idx_arr = np.searchsorted(t_raw, t_out).clip(0, len(status_raw) - 1)
-                status_out = [str(status_raw[int(i)]) for i in idx_arr]
-
-                # Expand bounds to include pit-lane excursions
-                bx_min = float(min(bounds["minX"], x_out.min()))
-                bx_max = float(max(bounds["maxX"], x_out.max()))
-                by_min = float(min(bounds["minY"], y_out.min()))
-                by_max = float(max(bounds["maxY"], y_out.max()))
-                bounds["minX"] = bx_min; bounds["maxX"] = bx_max
-                bounds["minY"] = by_min; bounds["maxY"] = by_max
-
-                yield sse_event("driver_pos", {
-                    "code":   code,
-                    "t":      normalise(t_out),
-                    "x":      normalise(x_out),
-                    "y":      normalise(y_out),
-                    "status": status_out,
-                })
-                time.sleep(0.02)
-            except Exception as e:
-                yield sse_event("warning", {"message": f"Position data unavailable for {code}: {e}"})
-
-        yield sse_event("complete", {})
+        yield sse_event("complete", {"sessionId": session_id})
 
     return Response(
         stream(),
@@ -485,10 +534,7 @@ def get_race_positions():
 
 
 def _sessions_from_event(row) -> list:
-    """
-    Derive session pills from FastF1 event schedule row.
-    Session1..Session5 columns contain names like 'Practice 1', 'Qualifying', 'Sprint', etc.
-    """
+    """Derive session pills from FastF1 event schedule row."""
     session_map = {
         "practice 1":          "FP1",
         "practice 2":          "FP2",
@@ -505,7 +551,6 @@ def _sessions_from_event(row) -> list:
         code = session_map.get(val)
         if code and code not in result:
             result.append(code)
-    # Guarantee at least a Race pill so the card always has something to click
     if not result:
         result = ["FP1", "FP2", "FP3", "Q", "R"]
     return result
@@ -539,5 +584,6 @@ def get_races():
 
 
 if __name__ == "__main__":
-    print("🏎  F1 Telemetry Python service starting on http://localhost:5000")
-    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+    port = int(os.environ.get("PORT", 5000))
+    print(f"F1 Telemetry Python service starting on http://0.0.0.0:{port}")
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
