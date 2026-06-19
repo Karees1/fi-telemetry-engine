@@ -2,6 +2,24 @@ import { useState, useCallback, useRef } from 'react';
 import { Race, SessionType } from '@/types';
 import { TrackLayout } from '@/hooks/useSessionLoad';
 
+const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+async function warmUpService(signal: AbortSignal): Promise<boolean> {
+  for (let attempt = 1; attempt <= 12; attempt++) {
+    if (signal.aborted) return false;
+    try {
+      const res = await fetch('/api/health', {
+        signal: AbortSignal.timeout(9000),
+        cache: 'no-store',
+      });
+      if (res.ok) return true;
+    } catch { /* still waking */ }
+    if (signal.aborted) return false;
+    await delay(2000);
+  }
+  return false;
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface RaceDriverInfo {
@@ -233,7 +251,15 @@ export function useRacePositions() {
 
     if (abort.signal.aborted) return;
 
-    // ── 2. Cache miss — connect to Python SSE ────────────────────────────────
+    // ── 2. Cache miss — pre-warm Render, then open SSE ───────────────────────
+    setState(s => ({ ...s, stage: 'connecting' }));
+    const alive = await warmUpService(abort.signal);
+    if (abort.signal.aborted) return;
+    if (!alive) {
+      setState({ ...INITIAL, stage: 'error', error: 'Data service unreachable. Try again in a moment.' });
+      return;
+    }
+
     const params = new URLSearchParams({
       year:    String(race.year),
       round:   String(race.round),

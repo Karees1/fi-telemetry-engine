@@ -107,6 +107,35 @@ interface SessionMetaCache {
 
 const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
+/**
+ * Pre-warm the Render Python service before opening the SSE stream.
+ * Render free tier sleeps after 15 min; cold start takes 30–60 s.
+ * Each /api/health call has an 8 s timeout on the Vercel side, so we
+ * retry up to 12 times (~2 min total) to cover worst-case cold starts.
+ * Returns true once Render is awake, false if it never came up.
+ */
+async function warmUpService(
+  signal: AbortSignal,
+  onAttempt: (n: number) => void,
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= 12; attempt++) {
+    if (signal.aborted) return false;
+    onAttempt(attempt);
+    try {
+      const res = await fetch('/api/health', {
+        signal: AbortSignal.timeout(9000),
+        cache: 'no-store',
+      });
+      if (res.ok) return true;
+    } catch {
+      // 504 or network error — Render still waking up
+    }
+    if (signal.aborted) return false;
+    await delay(2000);
+  }
+  return false;
+}
+
 async function loadFromCache(
   race: Race,
   sessionType: SessionType,
@@ -235,7 +264,31 @@ export function useSessionLoad() {
     if (abort.signal.aborted) return;
     if (cacheHit) return;
 
-    // ── 2. Cache miss — connect to Python SSE ────────────────────────────────
+    // ── 2. Cache miss — pre-warm Render then open SSE ───────────────────────
+    setStateAndRef({ ...INITIAL, stage: 'connecting', message: 'WARMING UP DATA SERVICE' });
+
+    const alive = await warmUpService(abort.signal, (n) => {
+      if (!abort.signal.aborted) {
+        setStateAndRef(s => ({
+          ...s,
+          message: n === 1
+            ? 'WAKING UP DATA SERVICE…'
+            : `DATA SERVICE STARTING UP (${n})`,
+        }));
+      }
+    });
+
+    if (abort.signal.aborted) return;
+    if (!alive) {
+      setStateAndRef(s => ({
+        ...s,
+        stage: 'error',
+        message: 'UPLINK FAILED',
+        error: 'Data service unreachable after 2 minutes. Check that the Python service is running on Render.',
+      }));
+      return;
+    }
+
     setStateAndRef({ ...INITIAL, stage: 'connecting', message: 'ESTABLISHING UPLINK' });
 
     const params = new URLSearchParams({
