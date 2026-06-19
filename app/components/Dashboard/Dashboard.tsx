@@ -49,7 +49,7 @@ export function Dashboard({ loadState, race, session, onBack, onLoadLap }: Dashb
   // Start/stop race data loading when race mode toggles
   useEffect(() => {
     if (raceMode) {
-      void loadRace(race, session);
+      void loadRace(race, session, loadState.track);
     } else {
       resetRace();
       setRaceTimeSeconds(0);
@@ -77,6 +77,7 @@ export function Dashboard({ loadState, race, session, onBack, onLoadLap }: Dashb
         racePositions={racePos.data ?? null}
         race={race}
         session={session}
+        laps={loadState.laps}
       />
     );
   }

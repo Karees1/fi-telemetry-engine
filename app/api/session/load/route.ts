@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 
-// Edge runtime: no 10 s timeout, supports streaming SSE responses
-export const runtime = 'edge';
+// Node.js runtime — longer 60 s timeout vs Edge's 30 s; streaming works fine
+export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 const PYTHON_URL = process.env.PYTHON_SERVICE_URL ?? 'http://localhost:5000';
 

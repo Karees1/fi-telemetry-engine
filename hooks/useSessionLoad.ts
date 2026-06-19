@@ -30,6 +30,10 @@ export interface LapRow {
   sector3: number | null;
   compound: string;
   isPersonalBest: boolean;
+  position: number | null;
+  pitInTime: number | null;   // ms from session start
+  pitOutTime: number | null;  // ms from session start
+  lapStartTime: number | null; // ms from session start
 }
 
 export interface TrackLayout {

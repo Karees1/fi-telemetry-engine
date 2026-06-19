@@ -76,10 +76,31 @@ def safe_bool(val):
     return bool(val)
 
 
-def _run_in_thread(fn):
+def safe_int(val, default=0):
+    """pandas NA-safe int conversion."""
+    try:
+        if val is None or pd.isna(val):
+            return default
+        return int(val)
+    except Exception:
+        return default
+
+
+def td_s(val):
+    """Safely convert a pandas Timedelta (or NaT) to seconds float."""
+    try:
+        if val is None or pd.isna(val):
+            return None
+        return float(val.total_seconds())
+    except Exception:
+        return None
+
+
+def _run_in_thread(fn, max_wait=120):
     """Run fn() in a background thread; yield keep-alive SSE comments every
-    15 s while waiting. Yields a (status, value) tuple when done."""
+    5 s while waiting. Aborts and yields ("err", "Timeout") after max_wait seconds."""
     result_q = queue.Queue()
+    deadline  = time.time() + max_wait
 
     def _worker():
         try:
@@ -89,8 +110,12 @@ def _run_in_thread(fn):
 
     threading.Thread(target=_worker, daemon=True).start()
     while True:
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            yield ("err", f"Timeout after {max_wait}s")
+            return
         try:
-            status, value = result_q.get(timeout=5)   # 5 s keeps proxy connections alive
+            status, value = result_q.get(timeout=min(5, remaining))
             yield (status, value)
             return
         except queue.Empty:
@@ -231,16 +256,31 @@ def load_session():
         laps_payload = []
         try:
             for _, lap in session.laps.iterrows():
-                laps_payload.append({
-                    "driver":         lap.get("Driver", ""),
-                    "lapNumber":      int(lap.get("LapNumber", 0)),
-                    "lapTime":        td_ms(lap.get("LapTime")),
-                    "sector1":        td_ms(lap.get("Sector1Time")),
-                    "sector2":        td_ms(lap.get("Sector2Time")),
-                    "sector3":        td_ms(lap.get("Sector3Time")),
-                    "compound":       str(lap.get("Compound", "") or ""),
-                    "isPersonalBest": safe_bool(lap.get("IsPersonalBest", False)),
-                })
+                try:
+                    # Compute lap start time: session time at lap end − lap duration
+                    lap_time_td  = lap.get("LapTime")
+                    lap_end_td   = lap.get("Time")
+                    lap_start_ms = None
+                    if lap_time_td is not None and not pd.isna(lap_time_td) and \
+                       lap_end_td  is not None and not pd.isna(lap_end_td):
+                        lap_start_ms = td_ms(lap_end_td - lap_time_td)
+
+                    laps_payload.append({
+                        "driver":         str(lap.get("Driver", "")),
+                        "lapNumber":      safe_int(lap.get("LapNumber"), 0),
+                        "lapTime":        td_ms(lap.get("LapTime")),
+                        "sector1":        td_ms(lap.get("Sector1Time")),
+                        "sector2":        td_ms(lap.get("Sector2Time")),
+                        "sector3":        td_ms(lap.get("Sector3Time")),
+                        "compound":       str(lap.get("Compound", "") or ""),
+                        "isPersonalBest": safe_bool(lap.get("IsPersonalBest", False)),
+                        "position":       safe_int(lap.get("Position"), None),
+                        "pitInTime":      td_ms(lap.get("PitInTime")),
+                        "pitOutTime":     td_ms(lap.get("PitOutTime")),
+                        "lapStartTime":   lap_start_ms,
+                    })
+                except Exception:
+                    pass  # skip individual bad rows
         except Exception as e:
             yield sse_event("warning", {"message": f"Lap times partial: {e}"})
 
@@ -292,7 +332,7 @@ def load_session():
                 return fastest.get_telemetry()
 
             t1_status = None; t1_tel = None
-            for chunk in _run_in_thread(_t1):
+            for chunk in _run_in_thread(_t1, max_wait=25):
                 if isinstance(chunk, tuple):
                     t1_status, t1_tel = chunk
                 else:
@@ -307,29 +347,32 @@ def load_session():
             else:
                 first_error = str(t1_tel)
 
-        # Tier 2 — fastest lap per driver (try first 5)
+        # Tier 2 — try first 3 drivers in one thread (avoids multi-thread overhead)
         if not track_sent:
-            for drv in list(session.laps["Driver"].unique())[:5]:
-                def _t2(d=drv):
-                    lap = session.laps.pick_driver(d).pick_fastest()
-                    if lap is None or (hasattr(lap, "empty") and lap.empty):
-                        raise ValueError(f"No fastest lap for {d}")
-                    return lap.get_telemetry()
-
-                t2_status = None; t2_tel = None
-                for chunk in _run_in_thread(_t2):
-                    if isinstance(chunk, tuple):
-                        t2_status, t2_tel = chunk
-                    else:
-                        yield chunk
-
-                if t2_status == "ok":
+            def _t2_batch():
+                for d in list(session.laps["Driver"].unique())[:3]:
                     try:
-                        yield sse_event("track_layout", _build_track(t2_tel))
-                        track_sent = True
-                        break
+                        lap = session.laps.pick_driver(d).pick_fastest()
+                        if lap is None or (hasattr(lap, "empty") and lap.empty):
+                            continue
+                        return lap.get_telemetry()
                     except Exception:
                         continue
+                raise ValueError("No Tier-2 telemetry available")
+
+            t2_status = None; t2_tel = None
+            for chunk in _run_in_thread(_t2_batch, max_wait=25):
+                if isinstance(chunk, tuple):
+                    t2_status, t2_tel = chunk
+                else:
+                    yield chunk
+
+            if t2_status == "ok":
+                try:
+                    yield sse_event("track_layout", _build_track(t2_tel))
+                    track_sent = True
+                except Exception:
+                    pass
 
         # Tier 3 — raw pos_data (only available if telemetry was pre-loaded;
         # skipped here since we no longer do session.load(telemetry=True))
@@ -364,14 +407,9 @@ def load_session():
                 yield sse_event("warning", {"message": f"Track layout unavailable: {first_error}"})
 
         # ── 7. Per-driver telemetry ────────────────────────────────────────
+        # Only download if the client explicitly requests driver codes.
+        # On-demand loading via /api/session/lap is preferred for memory efficiency.
         requested = [d.strip().upper() for d in drivers.split(",") if d.strip()] if drivers else []
-        if not requested:
-            try:
-                # Limit to top 3 by default to keep memory usage manageable on Render
-                top = session.laps.groupby("Driver")["LapTime"].min().nsmallest(3).index.tolist()
-                requested = top
-            except Exception:
-                requested = []
 
         for driver_code in requested:
             def _drv_tel(code=driver_code):
@@ -382,7 +420,7 @@ def load_session():
                 return (lap, tel)
 
             drv_status = None; drv_result = None
-            for chunk in _run_in_thread(_drv_tel):
+            for chunk in _run_in_thread(_drv_tel, max_wait=20):
                 if isinstance(chunk, tuple):
                     drv_status, drv_result = chunk
                 else:
@@ -484,15 +522,23 @@ def get_lap_telemetry():
 @app.route("/api/race/positions")
 def get_race_positions():
     """
-    SSE stream — full race GPS positions for all cars.
+    SSE stream — lap-interpolation race data for all cars (no telemetry download).
 
-    Query params: year, round, session (same as /api/session/load)
+    Uses only session.laps (loaded with laps=True, telemetry=False) to derive
+    each driver's position on track at any race time T via:
+      fraction = (T - lapStart) / lapDuration  →  track index
+
+    This avoids the 300–500 MB session.load(telemetry=True) that OOMs on
+    Render's 512 MB free tier.
+
+    Query params: year, round, session
 
     Event sequence:
-        connecting   { message }
-        race_start   { sessionId, drivers[], bounds, totalTime }
-        driver_pos   { code, t[], x[], y[], status[] }   — one per driver
-        complete     { sessionId }
+        connecting    { message }
+        race_start    { sessionId, drivers[], totalTime, mode:'lap_interpolation' }
+        driver_laps   { code, laps:[{n, start, duration, compound, pitIn, pitOut}] }
+                          — one per driver, times in seconds from session start
+        complete      { sessionId }
     """
     year    = request.args.get("year",    type=int)
     round_n = request.args.get("round",   type=int)
@@ -502,7 +548,7 @@ def get_race_positions():
         return Response(sse_error("Missing year or round"), mimetype="text/event-stream", status=400)
 
     def stream():
-        yield sse_event("connecting", {"message": "LOADING RACE POSITIONS"})
+        yield sse_event("connecting", {"message": "LOADING RACE DATA"})
 
         # ── 1. Resolve session ────────────────────────────────────────────────
         session = None
@@ -516,108 +562,117 @@ def get_race_positions():
             else:
                 yield chunk
 
-        # ── 2. Load telemetry (needed for pos_data) ───────────────────────────
-        status = None
+        # ── 2. Load ONLY laps — no telemetry, avoids OOM ─────────────────────
+        load_status = None
         for chunk in _run_in_thread(
-            lambda: session.load(laps=True, telemetry=True, weather=False, messages=False)
+            lambda: session.load(laps=True, telemetry=False, weather=False, messages=False),
+            max_wait=60,
         ):
             if isinstance(chunk, tuple):
-                status, err = chunk
+                load_status, _ = chunk
             else:
                 yield chunk
 
-        if status == "err":
-            yield sse_error(f"Telemetry load failed: {err}")
+        if load_status == "err":
+            yield sse_error("Lap load failed — try again")
             return
 
         gc.collect()
 
         # ── 3. Build driver roster ────────────────────────────────────────────
-        car_num_to_code: dict[str, str] = {}
         driver_info = []
         try:
             for _, row in session.results.iterrows():
                 code    = str(row.get("Abbreviation", "???"))
                 num_raw = row.get("DriverNumber", 0)
-                num_str = str(int(float(str(num_raw)))) if num_raw else "0"
                 team    = str(row.get("TeamName", ""))
                 pos_val = row.get("Position")
-                car_num_to_code[num_str] = code
                 driver_info.append({
                     "code":     code,
                     "fullName": f"{row.get('FirstName','')} {row.get('LastName','')}".strip(),
                     "team":     team,
-                    "number":   int(float(str(num_raw))) if num_raw else 0,
+                    "number":   safe_int(num_raw, 0),
                     "color":    _TEAM_COLORS.get(team, "#00D9FF"),
-                    "position": int(pos_val) if pos_val and not pd.isna(pos_val) else None,
+                    "position": safe_int(pos_val, None),
                 })
         except Exception as e:
             yield sse_event("warning", {"message": f"Driver info partial: {e}"})
 
-        # ── 4. Extract position series per car ────────────────────────────────
-        all_x, all_y = [], []
-        total_time   = 0.0
-        driver_positions: dict[str, dict] = {}
+        # ── 4. Compute lap data per driver ────────────────────────────────────
+        total_time = 0.0
+        driver_lap_data: dict[str, list] = {}
 
         try:
-            for car_key, df in session.pos_data.items():
+            # total_time = max session time across all drivers
+            max_t = session.laps["Time"].dropna()
+            if not max_t.empty:
+                total_time = float(max_t.max().total_seconds())
+        except Exception:
+            pass
+
+        try:
+            for code in session.laps["Driver"].unique():
                 try:
-                    num_str = str(int(float(str(car_key))))
+                    drv_laps = session.laps.pick_driver(code)
+                    if drv_laps.empty:
+                        continue
+
+                    laps = []
+                    for _, lap in drv_laps.iterrows():
+                        try:
+                            lap_time_td = lap.get("LapTime")
+                            lap_end_td  = lap.get("Time")  # session time at lap END
+
+                            if lap_time_td is None or pd.isna(lap_time_td):
+                                continue
+                            if lap_end_td is None or pd.isna(lap_end_td):
+                                continue
+
+                            lap_dur_s   = float(lap_time_td.total_seconds())
+                            lap_end_s   = float(lap_end_td.total_seconds())
+                            lap_start_s = lap_end_s - lap_dur_s
+
+                            if lap_dur_s <= 0:
+                                continue
+
+                            pit_in_td  = lap.get("PitInTime")
+                            pit_out_td = lap.get("PitOutTime")
+                            pit_in_s   = float(pit_in_td.total_seconds())  if pit_in_td  is not None and not pd.isna(pit_in_td)  else None
+                            pit_out_s  = float(pit_out_td.total_seconds()) if pit_out_td is not None and not pd.isna(pit_out_td) else None
+
+                            laps.append({
+                                "n":        safe_int(lap.get("LapNumber"), 0),
+                                "start":    round(lap_start_s, 3),
+                                "duration": round(lap_dur_s,   3),
+                                "compound": str(lap.get("Compound", "") or "UNKNOWN"),
+                                "pitIn":    round(pit_in_s,  3) if pit_in_s  is not None else None,
+                                "pitOut":   round(pit_out_s, 3) if pit_out_s is not None else None,
+                            })
+                        except Exception:
+                            continue
+
+                    if laps:
+                        driver_lap_data[code] = laps
                 except Exception:
-                    num_str = str(car_key)
-                code = car_num_to_code.get(num_str, num_str)
-
-                if df is None or df.empty:
                     continue
-
-                if "Time" in df.columns:
-                    t_raw = df["Time"].dt.total_seconds().values.astype(float)
-                else:
-                    t_raw = (df["Date"] - df["Date"].iloc[0]).dt.total_seconds().values.astype(float)
-
-                x_raw  = df["X"].values.astype(float)
-                y_raw  = df["Y"].values.astype(float)
-                st_raw = df["Status"].fillna("OnTrack").tolist() if "Status" in df.columns \
-                         else ["OnTrack"] * len(df)
-
-                # Subsample: keep ≤ 8000 points per driver (~1.5 Hz for a 90-min race)
-                step = max(1, len(df) // 8000)
-                t_s  = normalise(t_raw[::step])
-                x_s  = normalise(x_raw[::step])
-                y_s  = normalise(y_raw[::step])
-                st_s = st_raw[::step]
-
-                driver_positions[code] = {"t": t_s, "x": x_s, "y": y_s, "status": st_s}
-                all_x.extend(x_s)
-                all_y.extend(y_s)
-                if t_s:
-                    total_time = max(total_time, float(t_s[-1]))
-
         except Exception as e:
-            yield sse_event("warning", {"message": f"Position data failed: {e}"})
-            yield sse_event("complete", {"sessionId": f"{year}_{round_n}_{s_type}"})
-            return
+            yield sse_event("warning", {"message": f"Lap data partial: {e}"})
 
         gc.collect()
 
-        bounds = {
-            "minX": float(np.min(all_x)) if all_x else -5000.0,
-            "maxX": float(np.max(all_x)) if all_x else  5000.0,
-            "minY": float(np.min(all_y)) if all_y else -5000.0,
-            "maxY": float(np.max(all_y)) if all_y else  5000.0,
-        }
         session_id = f"{year}_{round_n}_{s_type}"
 
+        # ── 5. Emit race_start ────────────────────────────────────────────────
         yield sse_event("race_start", {
             "sessionId": session_id,
             "drivers":   driver_info,
-            "bounds":    bounds,
-            "totalTime": total_time,
+            "totalTime": round(total_time, 3),
+            "mode":      "lap_interpolation",
         })
 
-        for code, pos in driver_positions.items():
-            yield sse_event("driver_pos", {"code": code, **pos})
-            gc.collect()
+        # ── 6. Emit driver_laps (one per driver) ──────────────────────────────
+        for code, laps in driver_lap_data.items():
+            yield sse_event("driver_laps", {"code": code, "laps": laps})
 
         yield sse_event("complete", {"sessionId": session_id})
 

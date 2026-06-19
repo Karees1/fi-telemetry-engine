@@ -4,9 +4,9 @@ import {
   useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback,
 } from 'react';
 import { Race, SessionType } from '@/types';
-import { TrackLayout } from '@/hooks/useSessionLoad';
+import { TrackLayout, LapRow } from '@/hooks/useSessionLoad';
 import {
-  RacePositionData, DriverPositionSeries, RaceDriverInfo,
+  RacePositionData, DriverPositionSeries, RaceDriverInfo, DriverLapEntry,
 } from '@/hooks/useRacePositions';
 import { useDashboardStore } from '@/store/dashboardStore';
 import styles from './RaceMap.module.css';
@@ -697,17 +697,51 @@ function PlaybackBar({ totalTime }: { totalTime: number }) {
   );
 }
 
+// ── Tyre lookup from lap data ──────────────────────────────────────────────────
+function getTyreAtTime(
+  code: string,
+  t: number,
+  driverLaps: Record<string, DriverLapEntry[]> | undefined,
+): { c: string; n: string } {
+  if (!driverLaps) return TYRE_DEFAULT;
+  const laps = driverLaps[code];
+  if (!laps) return TYRE_DEFAULT;
+  for (const lap of laps) {
+    if (t >= lap.start && t < lap.start + lap.duration) {
+      return TYRE_COLORS[lap.compound?.toUpperCase()] ?? TYRE_DEFAULT;
+    }
+  }
+  return TYRE_DEFAULT;
+}
+
 // ── Main RaceMap component ─────────────────────────────────────────────────────
 interface RaceMapProps {
   track: TrackLayout;
   racePositions: RacePositionData | null;
   race: Race;
   session: SessionType;
+  laps?: LapRow[];
 }
 
-export function RaceMap({ track, racePositions, race, session }: RaceMapProps) {
+export function RaceMap({ track, racePositions, race, session, laps }: RaceMapProps) {
   const setRaceMode  = useDashboardStore(s => s.setRaceMode);
   const totalTime    = racePositions?.totalTime ?? 0;
+
+  // Compute total laps from actual lap data
+  const totalLaps = useMemo(() => {
+    if (racePositions?.driverLaps) {
+      let max = 0;
+      for (const drvLaps of Object.values(racePositions.driverLaps)) {
+        const last = drvLaps[drvLaps.length - 1];
+        if (last && last.n > max) max = last.n;
+      }
+      if (max > 0) return max;
+    }
+    if (laps && laps.length > 0) {
+      return Math.max(...laps.map(l => l.lapNumber));
+    }
+    return 53;
+  }, [racePositions, laps]);
 
   // ── Scale the 1920×1080 stage to fit the viewport ─────────────────────────
   const [stageScale, setStageScale] = useState(1);
@@ -810,20 +844,34 @@ export function RaceMap({ track, racePositions, race, session }: RaceMapProps) {
       pitTrackerRef.current.set(driver.code, pitting);
     });
 
+    // Estimate average lap time from first few drivers for gap approximation
+    const avgLapSec = (() => {
+      if (!racePositions?.driverLaps) return 90;
+      const samples: number[] = [];
+      for (const lapsArr of Object.values(racePositions.driverLaps)) {
+        for (const l of lapsArr) {
+          if (l.duration > 60 && l.duration < 200) samples.push(l.duration);
+          if (samples.length >= 10) break;
+        }
+        if (samples.length >= 10) break;
+      }
+      if (!samples.length) return 90;
+      return samples.reduce((a, b) => a + b, 0) / samples.length;
+    })();
+
     // Build leaderboard rows with approximate intervals
     const built: LBRow[] = rows.map((r, i) => {
       const fracAhead = i === 0 ? r.frac : rows[i - 1].frac;
       const fracDiff  = fracAhead - r.frac;
-      // Approximate seconds: gap in fraction × lap time (assume average lap ~100s)
-      const approxSec = fracDiff * 100;
+      const approxSec = fracDiff * avgLapSec;
       const interval  = i === 0 ? 'LEADER' : `+${approxSec.toFixed(1)}s`;
-      const tyre      = TYRE_DEFAULT; // Tyre data not available from position stream
+      const tyre      = getTyreAtTime(r.driver.code, t, racePositions?.driverLaps);
       return {
         rank: i + 1,
         driver: r.driver,
         interval,
         pitting: r.pitting,
-        drs: i > 0 && !r.pitting && (fracAhead - r.frac) * 100 < 1.0,
+        drs: i > 0 && !r.pitting && (fracAhead - r.frac) * avgLapSec < 1.0,
         tyre,
       };
     });
@@ -944,10 +992,10 @@ export function RaceMap({ track, racePositions, race, session }: RaceMapProps) {
   useEffect(() => {
     const unsub = useDashboardStore.subscribe(
       s => s.raceTimeSeconds,
-      t => setLapNum(fmtLap(t, totalTime))
+      t => setLapNum(fmtLap(t, totalTime, totalLaps))
     );
     return unsub;
-  }, [totalTime]);
+  }, [totalTime, totalLaps]);
 
   const gpName      = race.name.toUpperCase();
   const circuitName = race.circuit.name.toUpperCase();
@@ -966,7 +1014,7 @@ export function RaceMap({ track, racePositions, race, session }: RaceMapProps) {
             gpName={gpName}
             circuitName={circuitName}
             lapNum={lapNum}
-            totalLaps={53}
+            totalLaps={totalLaps}
             onExit={() => setRaceMode(false)}
           />
 
