@@ -219,13 +219,34 @@ def load_session():
             yield sse_error(f"Session load failed: {err}")
             return
 
-        # Verify laps are actually populated — FastF1 can return without error
-        # but with unloaded data when the API returns empty/unparseable results.
+        # Verify laps are actually populated — FastF1 can silently fail to load
+        # laps (e.g. OpenF1 API returns empty/unexpected data for newer seasons).
+        # On failure, retry once with force=True to bypass any cached empty state.
         try:
             lap_count = len(session.laps)
-        except Exception as verify_err:
-            yield sse_error(f"Session laps unavailable: {verify_err}. Try a different session or year.")
-            return
+        except Exception:
+            # First attempt failed — retry with force=True
+            retry_status = None
+            for chunk in _run_in_thread(
+                lambda: session.load(laps=True, telemetry=False, weather=False, messages=False, force=True),
+                max_wait=60,
+            ):
+                if isinstance(chunk, tuple):
+                    retry_status, _ = chunk
+                else:
+                    yield chunk
+
+            try:
+                lap_count = len(session.laps)
+            except Exception as verify_err:
+                # Both attempts failed — most likely this year's data isn't
+                # available via the OpenF1 API that FastF1 uses for 2024+ seasons.
+                yield sse_error(
+                    f"No lap data available for {year} round {round_n} ({s_type}). "
+                    f"FastF1 error: {verify_err}. "
+                    f"Try the 2024 season — it has complete, verified data."
+                )
+                return
 
         # ── 4. session_meta ────────────────────────────────────────────────
         driver_rows = []
@@ -574,8 +595,30 @@ def get_race_positions():
                 yield chunk
 
         if load_status == "err":
-            yield sse_error("Lap load failed — try again")
+            yield sse_error(f"Lap load failed for {year} round {round_n}. Try the 2024 season.")
             return
+
+        # Verify laps are actually populated (same silent-failure guard as /api/session/load)
+        try:
+            _ = len(session.laps)
+        except Exception:
+            retry_st = None
+            for chunk in _run_in_thread(
+                lambda: session.load(laps=True, telemetry=False, weather=False, messages=False, force=True),
+                max_wait=60,
+            ):
+                if isinstance(chunk, tuple):
+                    retry_st, _ = chunk
+                else:
+                    yield chunk
+            try:
+                _ = len(session.laps)
+            except Exception as ve:
+                yield sse_error(
+                    f"No lap data for {year} round {round_n}. "
+                    f"FastF1: {ve}. Try the 2024 season."
+                )
+                return
 
         gc.collect()
 

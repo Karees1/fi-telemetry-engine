@@ -4,7 +4,7 @@ import { ApiResponse, Race, SessionType } from '@/types';
 const STANDARD_SESSIONS: SessionType[] = ['FP1', 'FP2', 'FP3', 'Q', 'R'];
 const SPRINT_SESSIONS:   SessionType[] = ['FP1', 'SQ', 'S', 'Q', 'R'];
 
-// Sprint weekends in 2024 by round number
+// Sprint weekends in 2024 by round number (China, Miami, Austria, USGP, Brazil, Qatar)
 const SPRINT_ROUNDS_2024 = new Set([5, 6, 11, 19, 21, 23]);
 
 const RACES_2024: Race[] = [
@@ -59,7 +59,40 @@ const RACES_2023: Race[] = [
   { id: '2023_22', year: 2023, round: 22, name: 'Abu Dhabi Grand Prix',      date: '2023-11-26', circuit: { id: 'yas_marina',    name: 'Yas Marina Circuit',                   location: 'Abu Dhabi, UAE' },           sessions: STANDARD_SESSIONS },
 ];
 
+// Sprint weekends in 2025: China(2), Miami(6), Belgium(13), USGP(19), Brazil(21), Qatar(23)
+const SPRINT_ROUNDS_2025 = new Set([2, 6, 13, 19, 21, 23]);
+
+const RACES_2025: Race[] = [
+  { id: '2025_01', year: 2025, round: 1,  name: 'Australian Grand Prix',      date: '2025-03-16', circuit: { id: 'albert_park',   name: 'Albert Park Circuit',                   location: 'Melbourne, Australia' },      sessions: STANDARD_SESSIONS },
+  { id: '2025_02', year: 2025, round: 2,  name: 'Chinese Grand Prix',         date: '2025-03-23', circuit: { id: 'shanghai',      name: 'Shanghai International Circuit',        location: 'Shanghai, China' },           sessions: SPRINT_SESSIONS },
+  { id: '2025_03', year: 2025, round: 3,  name: 'Japanese Grand Prix',        date: '2025-04-06', circuit: { id: 'suzuka',        name: 'Suzuka International Racing Course',     location: 'Suzuka, Japan' },             sessions: STANDARD_SESSIONS },
+  { id: '2025_04', year: 2025, round: 4,  name: 'Bahrain Grand Prix',         date: '2025-04-13', circuit: { id: 'bahrain',       name: 'Bahrain International Circuit',         location: 'Sakhir, Bahrain' },           sessions: STANDARD_SESSIONS },
+  { id: '2025_05', year: 2025, round: 5,  name: 'Saudi Arabian Grand Prix',   date: '2025-04-20', circuit: { id: 'jeddah',        name: 'Jeddah Corniche Circuit',               location: 'Jeddah, Saudi Arabia' },      sessions: STANDARD_SESSIONS },
+  { id: '2025_06', year: 2025, round: 6,  name: 'Miami Grand Prix',           date: '2025-05-04', circuit: { id: 'miami',         name: 'Miami International Autodrome',         location: 'Miami, USA' },                sessions: SPRINT_SESSIONS },
+  { id: '2025_07', year: 2025, round: 7,  name: 'Emilia Romagna Grand Prix',  date: '2025-05-18', circuit: { id: 'imola',         name: 'Autodromo Enzo e Dino Ferrari',         location: 'Imola, Italy' },              sessions: STANDARD_SESSIONS },
+  { id: '2025_08', year: 2025, round: 8,  name: 'Monaco Grand Prix',          date: '2025-05-25', circuit: { id: 'monaco',        name: 'Circuit de Monaco',                     location: 'Monte Carlo, Monaco' },       sessions: STANDARD_SESSIONS },
+  { id: '2025_09', year: 2025, round: 9,  name: 'Spanish Grand Prix',         date: '2025-06-01', circuit: { id: 'barcelona',     name: 'Circuit de Barcelona-Catalunya',        location: 'Barcelona, Spain' },          sessions: STANDARD_SESSIONS },
+  { id: '2025_10', year: 2025, round: 10, name: 'Canadian Grand Prix',        date: '2025-06-15', circuit: { id: 'montreal',      name: 'Circuit Gilles Villeneuve',             location: 'Montréal, Canada' },          sessions: STANDARD_SESSIONS },
+  { id: '2025_11', year: 2025, round: 11, name: 'Austrian Grand Prix',        date: '2025-06-29', circuit: { id: 'red_bull_ring', name: 'Red Bull Ring',                         location: 'Spielberg, Austria' },        sessions: STANDARD_SESSIONS },
+  { id: '2025_12', year: 2025, round: 12, name: 'British Grand Prix',         date: '2025-07-06', circuit: { id: 'silverstone',   name: 'Silverstone Circuit',                   location: 'Silverstone, UK' },           sessions: STANDARD_SESSIONS },
+  { id: '2025_13', year: 2025, round: 13, name: 'Belgian Grand Prix',         date: '2025-07-27', circuit: { id: 'spa',           name: 'Circuit de Spa-Francorchamps',          location: 'Spa, Belgium' },              sessions: SPRINT_SESSIONS },
+  { id: '2025_14', year: 2025, round: 14, name: 'Hungarian Grand Prix',       date: '2025-08-03', circuit: { id: 'hungaroring',   name: 'Hungaroring',                           location: 'Budapest, Hungary' },         sessions: STANDARD_SESSIONS },
+  { id: '2025_15', year: 2025, round: 15, name: 'Dutch Grand Prix',           date: '2025-08-31', circuit: { id: 'zandvoort',     name: 'Circuit Zandvoort',                     location: 'Zandvoort, Netherlands' },    sessions: STANDARD_SESSIONS },
+  { id: '2025_16', year: 2025, round: 16, name: 'Italian Grand Prix',         date: '2025-09-07', circuit: { id: 'monza',         name: 'Autodromo Nazionale Monza',             location: 'Monza, Italy' },              sessions: STANDARD_SESSIONS },
+  { id: '2025_17', year: 2025, round: 17, name: 'Azerbaijan Grand Prix',      date: '2025-09-21', circuit: { id: 'baku',          name: 'Baku City Circuit',                     location: 'Baku, Azerbaijan' },          sessions: STANDARD_SESSIONS },
+  { id: '2025_18', year: 2025, round: 18, name: 'Singapore Grand Prix',       date: '2025-10-05', circuit: { id: 'singapore',     name: 'Marina Bay Street Circuit',             location: 'Singapore' },                 sessions: STANDARD_SESSIONS },
+  { id: '2025_19', year: 2025, round: 19, name: 'United States Grand Prix',   date: '2025-10-19', circuit: { id: 'cota',          name: 'Circuit of The Americas',               location: 'Austin, USA' },               sessions: SPRINT_SESSIONS },
+  { id: '2025_20', year: 2025, round: 20, name: 'Mexico City Grand Prix',     date: '2025-10-26', circuit: { id: 'mexico',        name: 'Autódromo Hermanos Rodríguez',          location: 'Mexico City, Mexico' },       sessions: STANDARD_SESSIONS },
+  { id: '2025_21', year: 2025, round: 21, name: 'São Paulo Grand Prix',       date: '2025-11-09', circuit: { id: 'interlagos',    name: 'Autódromo José Carlos Pace',            location: 'São Paulo, Brazil' },         sessions: SPRINT_SESSIONS },
+  { id: '2025_22', year: 2025, round: 22, name: 'Las Vegas Grand Prix',       date: '2025-11-22', circuit: { id: 'las_vegas',     name: 'Las Vegas Strip Circuit',               location: 'Las Vegas, USA' },            sessions: STANDARD_SESSIONS },
+  { id: '2025_23', year: 2025, round: 23, name: 'Qatar Grand Prix',           date: '2025-11-30', circuit: { id: 'lusail',        name: 'Lusail International Circuit',          location: 'Lusail, Qatar' },             sessions: SPRINT_SESSIONS },
+  { id: '2025_24', year: 2025, round: 24, name: 'Abu Dhabi Grand Prix',       date: '2025-12-07', circuit: { id: 'yas_marina',    name: 'Yas Marina Circuit',                    location: 'Abu Dhabi, UAE' },            sessions: STANDARD_SESSIONS },
+];
+
+void SPRINT_ROUNDS_2025; // used only for documentation
+
 const STATIC_SEASONS: Record<number, Race[]> = {
+  2025: RACES_2025,
   2024: RACES_2024,
   2023: RACES_2023,
 };

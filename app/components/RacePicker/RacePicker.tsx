@@ -9,15 +9,15 @@ import { Globe } from './Globe';
 import { RaceCard } from './RaceCard';
 import styles from './RacePicker.module.css';
 
-// 2023/2024 use static data. All other seasons fetch live from the Python FastF1 service.
-const AVAILABLE_YEARS = [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026];
+// 2023/2024/2025 use static data. All other seasons fetch live from the Python FastF1 service.
+const AVAILABLE_YEARS = [2023, 2024, 2025];
 
 interface RacePickerProps {
   onRaceSelect: (race: Race, session: SessionType) => void;
 }
 
 export function RacePicker({ onRaceSelect }: RacePickerProps) {
-  const [year, setYear]               = useState(2026);
+  const [year, setYear]               = useState(2024);
   const { races, isLoading }          = useRaces(year);
   const [selectedRace, setSelectedRace] = useState<Race | null>(null);
   const [filterTerm, setFilterTerm]   = useState('');
