@@ -84,13 +84,13 @@ def _run_in_thread(fn):
     def _worker():
         try:
             result_q.put(("ok", fn()))
-        except Exception as exc:
+        except BaseException as exc:          # catch SystemExit / OOM too
             result_q.put(("err", str(exc)))
 
     threading.Thread(target=_worker, daemon=True).start()
     while True:
         try:
-            status, value = result_q.get(timeout=15)
+            status, value = result_q.get(timeout=5)   # 5 s keeps proxy connections alive
             yield (status, value)
             return
         except queue.Empty:
@@ -194,6 +194,14 @@ def load_session():
             yield sse_error(f"Session load failed: {err}")
             return
 
+        # Verify laps are actually populated — FastF1 can return without error
+        # but with unloaded data when the API returns empty/unparseable results.
+        try:
+            lap_count = len(session.laps)
+        except Exception as verify_err:
+            yield sse_error(f"Session laps unavailable: {verify_err}. Try a different session or year.")
+            return
+
         # ── 4. session_meta ────────────────────────────────────────────────
         driver_rows = []
         try:
@@ -238,23 +246,15 @@ def load_session():
 
         yield sse_event("lap_times", {"laps": laps_payload})
 
-        # ── 6. Reload with full telemetry ──────────────────────────────────
-        status = None
-        for chunk in _run_in_thread(
-            lambda: session.load(laps=True, telemetry=True, weather=False, messages=False)
-        ):
-            if isinstance(chunk, tuple):
-                status, err = chunk
-            else:
-                yield chunk  # keep-alive
-
-        if status == "err":
-            yield sse_error(f"Telemetry load failed: {err}")
-            return
-
         gc.collect()
 
-        # ── 7. Track layout ────────────────────────────────────────────────
+        # ── 6. Track layout ────────────────────────────────────────────────
+        # Full session.load(telemetry=True) is intentionally SKIPPED here.
+        # Downloading all 20 drivers' full-race telemetry at once peaks at
+        # ~300–500 MB on Render's 512 MB free tier and OOMs the process,
+        # dropping the SSE connection.  Instead we use lazy per-lap
+        # get_telemetry() in Tier 1/2 (FastF1 3.4+ fetches only what's
+        # needed), and Tier 3 (session.pos_data) only if it's already loaded.
         # Three-tier fallback so a partial telemetry load still yields a map.
         # Tier 1: fastest-lap telemetry (highest quality — single clean lap)
         # Tier 2: any driver's fastest lap
@@ -282,60 +282,88 @@ def load_session():
                 "length": float(tel_df["Distance"].dropna().max()) if "Distance" in tel_df.columns else float(len(x)),
             }
 
-        # Tier 1 — overall fastest lap
+        # Tier 1 — overall fastest lap (wrapped in thread so keep-alives flow
+        # while FastF1 lazily downloads the full telemetry dataset)
         if not track_sent:
-            try:
+            def _t1():
                 fastest = session.laps.pick_fastest()
-                if fastest is not None and not (hasattr(fastest, "empty") and fastest.empty):
-                    tel = fastest.get_telemetry()
-                    yield sse_event("track_layout", _build_track(tel))
-                    track_sent = True
-            except Exception as e1:
-                first_error = str(e1)
+                if fastest is None or (hasattr(fastest, "empty") and fastest.empty):
+                    raise ValueError("No fastest lap found")
+                return fastest.get_telemetry()
 
-        # Tier 2 — fastest lap per driver (try first 5 drivers)
+            t1_status = None; t1_tel = None
+            for chunk in _run_in_thread(_t1):
+                if isinstance(chunk, tuple):
+                    t1_status, t1_tel = chunk
+                else:
+                    yield chunk  # keep-alive
+
+            if t1_status == "ok":
+                try:
+                    yield sse_event("track_layout", _build_track(t1_tel))
+                    track_sent = True
+                except Exception as e1:
+                    first_error = str(e1)
+            else:
+                first_error = str(t1_tel)
+
+        # Tier 2 — fastest lap per driver (try first 5)
         if not track_sent:
             for drv in list(session.laps["Driver"].unique())[:5]:
-                try:
-                    lap = session.laps.pick_driver(drv).pick_fastest()
+                def _t2(d=drv):
+                    lap = session.laps.pick_driver(d).pick_fastest()
                     if lap is None or (hasattr(lap, "empty") and lap.empty):
-                        continue
-                    tel = lap.get_telemetry()
-                    yield sse_event("track_layout", _build_track(tel))
-                    track_sent = True
-                    break
-                except Exception:
-                    continue
+                        raise ValueError(f"No fastest lap for {d}")
+                    return lap.get_telemetry()
 
-        # Tier 3 — raw pos_data from any car (no lap segmentation needed)
+                t2_status = None; t2_tel = None
+                for chunk in _run_in_thread(_t2):
+                    if isinstance(chunk, tuple):
+                        t2_status, t2_tel = chunk
+                    else:
+                        yield chunk
+
+                if t2_status == "ok":
+                    try:
+                        yield sse_event("track_layout", _build_track(t2_tel))
+                        track_sent = True
+                        break
+                    except Exception:
+                        continue
+
+        # Tier 3 — raw pos_data (only available if telemetry was pre-loaded;
+        # skipped here since we no longer do session.load(telemetry=True))
         if not track_sent:
-            try:
-                for _car_key, pos_df in session.pos_data.items():
-                    if pos_df is None or pos_df.empty:
-                        continue
-                    valid = pos_df[["X", "Y"]].dropna()
-                    if len(valid) < 50:
-                        continue
-                    # Use first 10 000 points (≈ 2-3 laps at 4 Hz) for the outline
-                    sample = valid.iloc[:10000]
-                    payload = {
-                        "x": normalise(sample["X"].values),
-                        "y": normalise(sample["Y"].values),
-                        "z": [0.0] * len(sample),
-                        "distance": list(range(len(sample))),
-                        "bounds": {
-                            "minX": float(sample["X"].min()), "maxX": float(sample["X"].max()),
-                            "minY": float(sample["Y"].min()), "maxY": float(sample["Y"].max()),
-                        },
-                        "length": float(len(sample)),
-                    }
-                    yield sse_event("track_layout", payload)
-                    track_sent = True
-                    break
-            except Exception as e3:
-                yield sse_event("warning", {"message": f"Track layout all tiers failed: {first_error} / {e3}"})
+            pos_data = getattr(session, 'pos_data', None)
+            if pos_data is not None:
+                try:
+                    for _car_key, pos_df in pos_data.items():
+                        if pos_df is None or pos_df.empty:
+                            continue
+                        valid = pos_df[["X", "Y"]].dropna()
+                        if len(valid) < 50:
+                            continue
+                        sample = valid.iloc[:10000]
+                        payload = {
+                            "x": normalise(sample["X"].values),
+                            "y": normalise(sample["Y"].values),
+                            "z": [0.0] * len(sample),
+                            "distance": list(range(len(sample))),
+                            "bounds": {
+                                "minX": float(sample["X"].min()), "maxX": float(sample["X"].max()),
+                                "minY": float(sample["Y"].min()), "maxY": float(sample["Y"].max()),
+                            },
+                            "length": float(len(sample)),
+                        }
+                        yield sse_event("track_layout", payload)
+                        track_sent = True
+                        break
+                except Exception as e3:
+                    yield sse_event("warning", {"message": f"Track Tier 3 failed: {e3}"})
+            if not track_sent:
+                yield sse_event("warning", {"message": f"Track layout unavailable: {first_error}"})
 
-        # ── 8. Per-driver telemetry ────────────────────────────────────────
+        # ── 7. Per-driver telemetry ────────────────────────────────────────
         requested = [d.strip().upper() for d in drivers.split(",") if d.strip()] if drivers else []
         if not requested:
             try:
@@ -346,13 +374,22 @@ def load_session():
                 requested = []
 
         for driver_code in requested:
-            try:
-                lap = session.laps.pick_driver(driver_code).pick_fastest()
+            def _drv_tel(code=driver_code):
+                lap = session.laps.pick_driver(code).pick_fastest()
                 if lap is None or (hasattr(lap, "empty") and lap.empty):
-                    continue
-                tel = lap.get_telemetry()
-                # Drop rows where core channels are NaN to avoid JS parse errors
-                tel = tel.dropna(subset=["Distance", "Speed"])
+                    raise ValueError(f"No fastest lap for {code}")
+                tel = lap.get_telemetry().dropna(subset=["Distance", "Speed"])
+                return (lap, tel)
+
+            drv_status = None; drv_result = None
+            for chunk in _run_in_thread(_drv_tel):
+                if isinstance(chunk, tuple):
+                    drv_status, drv_result = chunk
+                else:
+                    yield chunk  # keep-alive
+
+            if drv_status == "ok":
+                lap, tel = drv_result
                 yield sse_event("telemetry", {
                     "driver":    driver_code,
                     "lapNumber": int(lap["LapNumber"]),
@@ -369,12 +406,11 @@ def load_session():
                         "z":        normalise(tel["Z"].fillna(0).values) if "Z" in tel.columns else [],
                     },
                 })
-            except Exception as e:
-                yield sse_event("warning", {"message": f"Telemetry unavailable for {driver_code}: {type(e).__name__}: {e}"})
-            finally:
-                gc.collect()
+            else:
+                yield sse_event("warning", {"message": f"Telemetry unavailable for {driver_code}: {drv_result}"})
+            gc.collect()
 
-        # ── 9. Done ────────────────────────────────────────────────────────
+        # ── 8. Done ────────────────────────────────────────────────────────
         yield sse_event("complete", {"sessionId": session_id})
 
     return Response(
