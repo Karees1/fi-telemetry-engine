@@ -68,7 +68,7 @@ const PYTHON_URL = process.env.PYTHON_SERVICE_URL ?? 'http://localhost:5000';
 
 /**
  * For 2023/2024 → return static data instantly (no Python needed).
- * For any other year → proxy to the Python FastF1 service.
+ * For all other years (including 2025, 2026, …) → proxy to the Python FastF1 service.
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
