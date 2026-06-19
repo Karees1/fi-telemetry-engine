@@ -29,7 +29,7 @@ CORS(app)
 # Pre-fetch the 2024 + 2023 + 2025 event schedules in the background so they're
 # cached before the first user request. Failures are silently ignored.
 def _warm_cache():
-    for yr in (2025, 2024, 2023):
+    for yr in (2026, 2025, 2024, 2023):
         try:
             fastf1.get_event_schedule(yr, include_testing=False)
         except Exception:
@@ -255,24 +255,85 @@ def load_session():
         gc.collect()
 
         # ── 7. Track layout ────────────────────────────────────────────────
-        try:
-            fastest = session.laps.pick_fastest()
-            tel = fastest.get_telemetry()
-            x    = normalise(tel["X"].values)
-            y    = normalise(tel["Y"].values)
-            z    = normalise(tel["Z"].values) if "Z" in tel.columns else [0.0] * len(x)
-            dist = normalise(tel["Distance"].values)
-            yield sse_event("track_layout", {
+        # Three-tier fallback so a partial telemetry load still yields a map.
+        # Tier 1: fastest-lap telemetry (highest quality — single clean lap)
+        # Tier 2: any driver's fastest lap
+        # Tier 3: raw pos_data (continuous GPS from any car)
+        track_sent   = False
+        first_error  = ""
+
+        def _build_track(tel_df):
+            """Normalise a telemetry / pos_data DataFrame into a track_layout payload."""
+            x_col = tel_df["X"].dropna()
+            y_col = tel_df["Y"].dropna()
+            if len(x_col) < 50:
+                raise ValueError(f"Too few X/Y points ({len(x_col)})")
+            x    = normalise(x_col.values)
+            y    = normalise(y_col.values)
+            z    = normalise(tel_df["Z"].dropna().values) if "Z" in tel_df.columns else [0.0] * len(x)
+            dist = normalise(tel_df["Distance"].dropna().values) if "Distance" in tel_df.columns else list(range(len(x)))
+            return {
                 "x": x, "y": y, "z": z,
                 "distance": dist,
                 "bounds": {
-                    "minX": float(np.min(tel["X"])), "maxX": float(np.max(tel["X"])),
-                    "minY": float(np.min(tel["Y"])), "maxY": float(np.max(tel["Y"])),
+                    "minX": float(np.nanmin(x_col)), "maxX": float(np.nanmax(x_col)),
+                    "minY": float(np.nanmin(y_col)), "maxY": float(np.nanmax(y_col)),
                 },
-                "length": float(tel["Distance"].max()),
-            })
-        except Exception as e:
-            yield sse_event("warning", {"message": f"Track layout unavailable: {e}"})
+                "length": float(tel_df["Distance"].dropna().max()) if "Distance" in tel_df.columns else float(len(x)),
+            }
+
+        # Tier 1 — overall fastest lap
+        if not track_sent:
+            try:
+                fastest = session.laps.pick_fastest()
+                if fastest is not None and not (hasattr(fastest, "empty") and fastest.empty):
+                    tel = fastest.get_telemetry()
+                    yield sse_event("track_layout", _build_track(tel))
+                    track_sent = True
+            except Exception as e1:
+                first_error = str(e1)
+
+        # Tier 2 — fastest lap per driver (try first 5 drivers)
+        if not track_sent:
+            for drv in list(session.laps["Driver"].unique())[:5]:
+                try:
+                    lap = session.laps.pick_driver(drv).pick_fastest()
+                    if lap is None or (hasattr(lap, "empty") and lap.empty):
+                        continue
+                    tel = lap.get_telemetry()
+                    yield sse_event("track_layout", _build_track(tel))
+                    track_sent = True
+                    break
+                except Exception:
+                    continue
+
+        # Tier 3 — raw pos_data from any car (no lap segmentation needed)
+        if not track_sent:
+            try:
+                for _car_key, pos_df in session.pos_data.items():
+                    if pos_df is None or pos_df.empty:
+                        continue
+                    valid = pos_df[["X", "Y"]].dropna()
+                    if len(valid) < 50:
+                        continue
+                    # Use first 10 000 points (≈ 2-3 laps at 4 Hz) for the outline
+                    sample = valid.iloc[:10000]
+                    payload = {
+                        "x": normalise(sample["X"].values),
+                        "y": normalise(sample["Y"].values),
+                        "z": [0.0] * len(sample),
+                        "distance": list(range(len(sample))),
+                        "bounds": {
+                            "minX": float(sample["X"].min()), "maxX": float(sample["X"].max()),
+                            "minY": float(sample["Y"].min()), "maxY": float(sample["Y"].max()),
+                        },
+                        "length": float(len(sample)),
+                    }
+                    yield sse_event("track_layout", payload)
+                    track_sent = True
+                    break
+            except Exception as e3:
+                yield sse_event("warning", {"message": f"Track layout all tiers failed: {first_error} / {e3}"})
 
         # ── 8. Per-driver telemetry ────────────────────────────────────────
         requested = [d.strip().upper() for d in drivers.split(",") if d.strip()] if drivers else []
@@ -287,9 +348,11 @@ def load_session():
         for driver_code in requested:
             try:
                 lap = session.laps.pick_driver(driver_code).pick_fastest()
-                if lap is None or lap.empty:
+                if lap is None or (hasattr(lap, "empty") and lap.empty):
                     continue
                 tel = lap.get_telemetry()
+                # Drop rows where core channels are NaN to avoid JS parse errors
+                tel = tel.dropna(subset=["Distance", "Speed"])
                 yield sse_event("telemetry", {
                     "driver":    driver_code,
                     "lapNumber": int(lap["LapNumber"]),
@@ -297,17 +360,17 @@ def load_session():
                     "points": {
                         "distance": normalise(tel["Distance"].values),
                         "speed":    normalise(tel["Speed"].values),
-                        "throttle": normalise(tel["Throttle"].values),
-                        "brake":    normalise(tel["Brake"].values),
-                        "gear":     normalise(tel["nGear"].values),
-                        "drs":      normalise(tel["DRS"].values),
-                        "x":        normalise(tel["X"].values),
-                        "y":        normalise(tel["Y"].values),
-                        "z":        normalise(tel["Z"].values) if "Z" in tel.columns else [],
+                        "throttle": normalise(tel["Throttle"].fillna(0).values),
+                        "brake":    normalise(tel["Brake"].fillna(False).astype(int).values),
+                        "gear":     normalise(tel["nGear"].fillna(0).values),
+                        "drs":      normalise(tel["DRS"].fillna(0).values),
+                        "x":        normalise(tel["X"].fillna(0).values),
+                        "y":        normalise(tel["Y"].fillna(0).values),
+                        "z":        normalise(tel["Z"].fillna(0).values) if "Z" in tel.columns else [],
                     },
                 })
             except Exception as e:
-                yield sse_event("warning", {"message": f"Telemetry unavailable for {driver_code}: {e}"})
+                yield sse_event("warning", {"message": f"Telemetry unavailable for {driver_code}: {type(e).__name__}: {e}"})
             finally:
                 gc.collect()
 
