@@ -420,17 +420,36 @@ def load_session():
             })
 
             # ── OpenF1 fallback: fetch laps + drivers directly ────────────────
-            try:
-                _of1_session_key_val, _of1_sess_info = _of1_session_key(year, round_n, s_type)
-                of1_laps, of1_drivers, _ = _of1_build_laps(_of1_session_key_val, _of1_sess_info)
-                lap_count = len(of1_laps)
-                _using_openf1_laps = True
-            except Exception as of1_err:
+            # MUST run in a thread so keep-alives flow during the 10-20s HTTP calls.
+            # A bare blocking call here would silence the SSE stream and the browser
+            # would reconnect (EventSource timeout), showing "Connection lost".
+            def _of1_load_all(_yr=year, _rnd=round_n, _st=s_type):
+                sk, si = _of1_session_key(_yr, _rnd, _st)
+                laps, drvs, raw = _of1_build_laps(sk, si)
+                return sk, si, laps, drvs
+
+            _of1_result = None
+            for chunk in _run_in_thread(_of1_load_all, max_wait=60):
+                if isinstance(chunk, tuple):
+                    _status, _value = chunk
+                    if _status == "ok":
+                        _of1_result = _value
+                    # if "err", result stays None — handled below
+                else:
+                    yield chunk  # keep-alive
+
+            if _of1_result is None:
+                # _of1_load_all raised — get a fresh error if we can
                 yield sse_error(
                     f"Both FastF1 and OpenF1 failed for {year} round {round_n} ({s_type}). "
-                    f"FastF1: {ff1_err} | OpenF1: {of1_err}"
+                    f"FastF1 error: {ff1_err}. "
+                    "Verify the Render service is running and can reach api.openf1.org."
                 )
                 return
+
+            _of1_session_key_val, _of1_sess_info, of1_laps, of1_drivers = _of1_result
+            lap_count = len(of1_laps)
+            _using_openf1_laps = True
 
         # ── 4. session_meta ────────────────────────────────────────────────
         session_id = f"{year}_{round_n}_{s_type}"
@@ -626,16 +645,28 @@ def load_session():
                 except Exception as e3:
                     yield sse_event("warning", {"message": f"Track Tier 3 failed: {e3}"})
             if not track_sent:
-                # Tier 4 — OpenF1 location data (one lap's GPS positions)
+                # Tier 4 — OpenF1 location data (one lap's GPS positions).
+                # Must be threaded — otherwise the blocking HTTP call silences the SSE.
                 if _of1_session_key_val and _of1_sess_info:
-                    try:
-                        of1_track = _of1_track_layout(
-                            _of1_session_key_val, _of1_sess_info, of1_laps
-                        )
-                        yield sse_event("track_layout", of1_track)
-                        track_sent = True
-                    except Exception as e4:
-                        yield sse_event("warning", {"message": f"Track Tier 4 (OpenF1) failed: {e4}"})
+                    def _t4(_sk=_of1_session_key_val, _si=_of1_sess_info, _laps=of1_laps):
+                        return _of1_track_layout(_sk, _si, _laps)
+
+                    t4_status = None; t4_result = None
+                    for chunk in _run_in_thread(_t4, max_wait=30):
+                        if isinstance(chunk, tuple):
+                            t4_status, t4_result = chunk
+                        else:
+                            yield chunk
+
+                    if t4_status == "ok":
+                        try:
+                            yield sse_event("track_layout", t4_result)
+                            track_sent = True
+                        except Exception as e4b:
+                            yield sse_event("warning", {"message": f"Track Tier 4 render error: {e4b}"})
+                    else:
+                        yield sse_event("warning", {"message": f"Track Tier 4 (OpenF1) failed: {t4_result}"})
+
                 if not track_sent:
                     yield sse_event("warning", {"message": f"Track layout unavailable: {first_error}"})
 
